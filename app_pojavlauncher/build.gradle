@@ -142,7 +142,9 @@ android {
             // Don't set to true or java.awt will be a.a or something similar.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.customRelease
+            // Use the upstream release key only when its password is provided (CI secret);
+            // otherwise sign with the debug key so forks can still produce an installable APK.
+            signingConfig System.getenv("GPLAY_KEYSTORE_PASSWORD") ? signingConfigs.customRelease : signingConfigs.customDebug
             // defaultConfig already set
             // multiDexEnabled = true
             // debuggable = true
