@@ -75,7 +75,7 @@ jobs:
 
       - name: Run scripts
         run: |
-          ./scripts/languagelist_updater.sh
+          bash ./scripts/languagelist_updater.sh
           mkdir out
 
       - name: Build Release .apk
