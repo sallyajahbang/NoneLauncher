@@ -86,7 +86,7 @@ public class MinecraftDownloader {
 
         sExecutorService.execute(() -> {
             try {
-                if(isLocalProfile || !isOnline) {
+                if(!isOnline) { // Downloads need no auth token, so offline accounts can install the game too
                     String versionMessage = realVersion; // Use provided version unless we find its a modded instance
 
                     // See if provided version is a modded version and if that version depends on another jar, check for presence of both jar's .json.
@@ -105,7 +105,7 @@ public class MinecraftDownloader {
 
                         listener.onDownloadDone();
                     } catch (Exception e) {
-                        String tryagain = !isOnline ? "Please ensure you have an internet connection" : "Please try again on your Microsoft Account";
+                        String tryagain = "Please ensure you have an internet connection";
                         Tools.showErrorRemote(versionMessage + " is not currently installed. "+ tryagain, e);
                     }
                 }else {
