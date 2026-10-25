@@ -1,9 +1,9 @@
 //
 // Created by maks on 21.09.2022.
 //
-#include <stddef.h>
 #include <stdlib.h>
 #include <dlfcn.h>
+#include <string.h>
 #include "egl_loader.h"
 #include "loader_dlopen.h"
 
@@ -31,8 +31,12 @@ EGLBoolean (*eglQuerySurface_p)( 	EGLDisplay display,
                                            EGLint * value);
 __eglMustCastToProperFunctionPointerType (*eglGetProcAddress_p) (const char *procname);
 
+struct android_namespace_t* app_escapeNs;
+
 bool dlsym_EGL() {
-    void* dl_handle = loader_dlopen(getenv("POJAVEXEC_EGL"),"libEGL.so", RTLD_LOCAL|RTLD_LAZY);
+    char* gles = getenv("LIBGL_GLES");
+    char* eglName = (strncmp(gles ? gles : "", "libGLESv2_angle.so", 18) == 0) ? "libEGL_angle.so" : getenv("POJAVEXEC_EGL");
+    void* dl_handle = loader_dlopen(eglName,"libEGL.so", RTLD_LOCAL|RTLD_LAZY);
     if(dl_handle == NULL) return false;
     eglGetProcAddress_p = dlsym(dl_handle, "eglGetProcAddress");
     if(eglGetProcAddress_p == NULL) {
@@ -59,4 +63,9 @@ bool dlsym_EGL() {
     eglGetCurrentSurface_p = (void*) eglGetProcAddress_p("eglGetCurrentSurface");
     eglQuerySurface_p = (void*) eglGetProcAddress_p("eglQuerySurface");
     return true;
+}
+
+__attribute__((visibility("default")))
+void *getProcAddress(const char* procname){
+    return eglGetProcAddress_p(procname);
 }

@@ -1,5 +1,7 @@
 package net.kdt.pojavlaunch;
 
+import static net.kdt.pojavlaunch.prefs.LauncherPreferences.DEFAULT_PREF;
+
 import android.annotation.SuppressLint;
 import android.app.ProgressDialog;
 import android.content.ClipboardManager;
@@ -210,11 +212,6 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         }
         Runtime selectedRuntime = MultiRTUtils.forceReread(nearestRuntime);
         int selectedJavaVersion = Math.max(javaVersion, selectedRuntime.javaVersion);
-        // Don't allow versions higher than Java 17 because our caciocavallo implementation does not allow for it
-        if(selectedJavaVersion > 17) {
-            finalErrorDialog(getString(R.string.execute_jar_incompatible_runtime, selectedJavaVersion));
-            return null;
-        }
         return selectedRuntime;
     }
 
@@ -242,8 +239,8 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
                 selectedMod = findModPath(argList);
             }
             Runtime selectedRuntime;
-            if(selectedMod == null) {
-                // We were unable to find out the path to the mod. In that case, use the default runtime.
+            if(selectedMod == null || DEFAULT_PREF.getBoolean("disable_autojre_select", false)) {
+                // If we are unable to find out the path to the mod or the user explicitly desires so, we use the default runtime
                 selectedRuntime = MultiRTUtils.forceReread(LauncherPreferences.PREF_DEFAULT_RUNTIME);
             }else {
                 // Autoselect it properly in the other case.
@@ -355,24 +352,14 @@ public class JavaGUILauncherActivity extends BaseActivity implements View.OnTouc
         JREUtils.redirectAndPrintJRELog();
         try {
             List<String> javaArgList = new ArrayList<>();
-
             // Enable Caciocavallo
-            Tools.getCacioJavaArgs(javaArgList,runtime.javaVersion == 8);
+            Tools.getCacioJavaArgs(javaArgList,runtime.javaVersion == 8, this);
             if(javaArgs != null) {
                 javaArgList.addAll(javaArgs);
             }
             if(modFile != null) {
                 javaArgList.add("-jar");
                 javaArgList.add(modFile.getAbsolutePath());
-            }
-            
-            // The Security Manager is permanently disabled since Java 24 (JEP 486), so the sandbox can only be used on older runtimes
-            if (LauncherPreferences.PREF_JAVA_SANDBOX && runtime.javaVersion < 24) {
-                Collections.reverse(javaArgList);
-                javaArgList.add("-Xbootclasspath/a:" + Tools.DIR_DATA + "/security/pro-grade.jar");
-                javaArgList.add("-Djava.security.manager=net.sourceforge.prograde.sm.ProGradeJSM");
-                javaArgList.add("-Djava.security.policy=" + Tools.DIR_DATA + "/security/java_sandbox.policy");
-                Collections.reverse(javaArgList);
             }
 
             Logger.appendToLog("Info: Java arguments: " + Arrays.toString(javaArgList.toArray(new String[0])));

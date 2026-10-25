@@ -21,6 +21,7 @@
             android:icon="@drawable/ic_setting_video"
             />
 
+
         <Preference
             android:key="control_screen_setting"
             android:title="@string/preference_control_title"
@@ -64,6 +65,11 @@
         android:title="@string/preference_ask_for_notification_title"
         android:summary="@string/preference_ask_for_notification_description"
         android:key="notification_permission_request"
+        />
+    <Preference
+        android:title="@string/preference_ask_for_microphone_title"
+        android:summary="@string/preference_ask_for_microphone_description"
+        android:key="microphone_permission_request"
         />
 
 

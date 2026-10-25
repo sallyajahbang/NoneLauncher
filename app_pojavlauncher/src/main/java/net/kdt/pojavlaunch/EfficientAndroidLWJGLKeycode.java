@@ -2,6 +2,7 @@ package net.kdt.pojavlaunch;
 
 import static org.lwjgl.glfw.CallbackBridge.sendKeyPress;
 
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 
 import org.lwjgl.glfw.CallbackBridge;
@@ -15,9 +16,11 @@ public class EfficientAndroidLWJGLKeycode {
     //The value its LWJGL equivalent.
     private static final int KEYCODE_COUNT = 106;
     private static final int[] sAndroidKeycodes = new int[KEYCODE_COUNT];
+    private static final int[] sLwjglKeycodesReversed = new int[LwjglGlfwKeycode.GLFW_KEY_LAST];
     private static final short[] sLwjglKeycodes = new short[KEYCODE_COUNT];
     private static String[] androidKeyNameArray; /* = new String[androidKeycodes.length]; */
     private static int mTmpCount = 0;
+    private static final KeyCharacterMap mKcm = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);
 
     static {
 
@@ -198,6 +201,52 @@ public class EfficientAndroidLWJGLKeycode {
         sendKeyPress(getValueByIndex(index));
     }
 
+    /**
+     * Takes a GLFW keycode and returns its char primitive. Works with Shift/Caps Lock.
+     * <p>
+     * Non-letter characters return U+0000.
+     *
+     * @param lwjglGlfwKeycode A GLFW key code macro (e.g., {@link LwjglGlfwKeycode#GLFW_KEY_W}).
+     */
+    public static char getLwjglChar(int lwjglGlfwKeycode){
+        char charToSend = mKcm.getDisplayLabel(getAndroidKeycode(lwjglGlfwKeycode));
+        int currentMods = CallbackBridge.getCurrentMods();
+        if (Character.isLetter(charToSend) && (
+        ((currentMods & LwjglGlfwKeycode.GLFW_MOD_SHIFT) != 0) ^
+        ((currentMods & LwjglGlfwKeycode.GLFW_MOD_CAPS_LOCK) != 0))
+        ){
+            charToSend = Character.toUpperCase(charToSend);
+        }
+        return charToSend;
+    }
+
+    /**
+     * Takes a GLFW keycode and returns equivalent android keycode.
+     * <p>
+     *
+     * @param lwjglGlfwKeycode A GLFW key code macro (e.g., {@link LwjglGlfwKeycode#GLFW_KEY_W}).
+     */
+    public static int getAndroidKeycode(int lwjglGlfwKeycode){
+        if (lwjglGlfwKeycode == LwjglGlfwKeycode.GLFW_KEY_2) return KeyEvent.KEYCODE_2;
+        if (lwjglGlfwKeycode == LwjglGlfwKeycode.GLFW_KEY_3) return KeyEvent.KEYCODE_3;
+        return sAndroidKeycodes[sLwjglKeycodesReversed[lwjglGlfwKeycode]];
+    }
+
+    private static final char[] buffer = new char[1];
+    /**
+     * Takes a char and returns equivalent android keycode.
+     * <p>
+     *
+     * @param c char primitive
+     */
+    public static int getAndroidKeycode(char c){
+        buffer[0] = c;
+        KeyEvent[] events = mKcm.getEvents(buffer);
+        return events != null && events.length > 0
+                ? events[0].getKeyCode()
+                : KeyEvent.KEYCODE_UNKNOWN;
+    }
+
     public static short getValueByIndex(int index) {
         return sLwjglKeycodes[index];
     }
@@ -218,6 +267,7 @@ public class EfficientAndroidLWJGLKeycode {
     private static void add(int androidKeycode, short LWJGLKeycode){
         sAndroidKeycodes[mTmpCount] = androidKeycode;
         sLwjglKeycodes[mTmpCount] = LWJGLKeycode;
+        sLwjglKeycodesReversed[LWJGLKeycode] = mTmpCount;
         mTmpCount ++;
     }
 }

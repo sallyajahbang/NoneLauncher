@@ -1,5 +1,8 @@
 package net.kdt.pojavlaunch.fragments;
 
+import static net.kdt.pojavlaunch.Tools.hasNoOnlineProfileDialog;
+import static net.kdt.pojavlaunch.Tools.hasOnlineProfile;
+
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Toast;
@@ -17,6 +20,9 @@ public class ProfileTypeSelectFragment extends Fragment {
     public ProfileTypeSelectFragment() {
         super(R.layout.fragment_profile_type);
     }
+    public ProfileTypeSelectFragment(int layout) {
+        super(layout);
+    }
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
@@ -33,8 +39,12 @@ public class ProfileTypeSelectFragment extends Fragment {
                 tryInstall(FabricInstallFragment.class, FabricInstallFragment.TAG));
         view.findViewById(R.id.modded_profile_forge).setOnClickListener((v)->
                 tryInstall(ForgeInstallFragment.class, ForgeInstallFragment.TAG));
+        view.findViewById(R.id.modded_profile_neoforge).setOnClickListener((v)->
+                tryInstall(NeoForgeInstallFragment.class, NeoForgeInstallFragment.TAG));
         view.findViewById(R.id.modded_profile_modpack).setOnClickListener((v)->
-                tryInstall(SearchModFragment.class, SearchModFragment.TAG));
+                tryInstall(ModpackCreateFragment.class, ModpackCreateFragment.TAG));
+        view.findViewById(R.id.modded_profile_lwjgl3ify).setOnClickListener((v)->
+                tryInstall(LWJGL3ifyInstallFragment.class, LWJGL3ifyInstallFragment.TAG));
         view.findViewById(R.id.modded_profile_quilt).setOnClickListener((v)->
                 tryInstall(QuiltInstallFragment.class, QuiltInstallFragment.TAG));
         view.findViewById(R.id.modded_profile_bta).setOnClickListener((v)->
@@ -42,8 +52,8 @@ public class ProfileTypeSelectFragment extends Fragment {
     }
 
     private void tryInstall(Class<? extends Fragment> fragmentClass, String tag){
-        if(Tools.isLocalProfile(requireContext()) || Tools.isDemoProfile(requireContext())){
-            Toast.makeText(requireContext(), R.string.toast_not_available_demo, Toast.LENGTH_LONG).show();
+        if(!hasOnlineProfile()){
+            hasNoOnlineProfileDialog(requireActivity());
         } else {
             Tools.swapFragment(requireActivity(), fragmentClass, tag, null);
         }
