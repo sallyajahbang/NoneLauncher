@@ -2,6 +2,8 @@ package com.sally.nonelauncher.runtime;
 
 import android.content.Context;
 import android.net.Uri;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -54,7 +56,10 @@ public final class RuntimeManager {
         File root = getRuntimeDirectory();
         File destination = new File(root, "Java17-ARM64");
         RuntimeInfo existing = inspect(destination);
-        if (existing != null) return existing;
+        if (existing != null) {
+            ensureJavaExecutable(existing.javaExecutable);
+            return existing;
+        }
         if (destination.exists()) deleteRecursively(destination);
 
         File staging = new File(root, ".bundled-import-" + System.nanoTime());
@@ -93,11 +98,18 @@ public final class RuntimeManager {
                         stream.write(buffer, 0, n);
                     }
                 }
-                if ((entry.getMode() & 0111) != 0) out.setExecutable(true, true);
+                if ((entry.getMode() & 0111) != 0) {
+                    out.setExecutable(true, true);
+                    try { Os.chmod(out.getAbsolutePath(), entry.getMode() & 0777); }
+                    catch (ErrnoException ignored) { /* The executable is checked explicitly below. */ }
+                }
             }
             File java = new File(staging, "bin/java");
             if (!java.isFile()) throw new IOException("Bundled archive does not contain bin/java");
             java.setExecutable(true, true);
+            try { Os.chmod(java.getAbsolutePath(), 0755); }
+            catch (ErrnoException error) { throw new IOException("Cannot set executable permission on bin/java", error); }
+            if (!java.canExecute()) throw new IOException("bin/java is not executable after extraction");
             if (!new File(staging, "release").isFile()) throw new IOException("Bundled archive does not contain release metadata");
             if (!staging.renameTo(destination)) throw new IOException("Cannot save bundled runtime");
             RuntimeInfo installed = inspect(destination);
@@ -110,6 +122,14 @@ public final class RuntimeManager {
             deleteRecursively(staging);
             throw error;
         }
+    }
+
+    private static void ensureJavaExecutable(File java) throws IOException {
+        if (!java.isFile()) throw new IOException("Missing executable: " + java.getAbsolutePath());
+        java.setExecutable(true, true);
+        try { Os.chmod(java.getAbsolutePath(), 0755); }
+        catch (ErrnoException error) { throw new IOException("Cannot set executable permission on " + java.getAbsolutePath(), error); }
+        if (!java.canExecute()) throw new IOException("Java executable permission could not be enabled: " + java.getAbsolutePath());
     }
 
     public RuntimeInfo importZip(Uri uri, String displayName) throws IOException {

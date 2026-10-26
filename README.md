@@ -24,3 +24,9 @@ The runtime smoke test is an execution check, not proof that Minecraft can launc
 ## Build
 
 Run `./gradlew :app:assembleDebug` or use the GitHub Actions workflow in `.github/workflows/android.yml`.
+
+### Stage 5.1: Runtime execute-permission fix
+- Runtime extraction now applies TAR executable mode bits with `Os.chmod` as well as `File.setExecutable`.
+- The bundled `bin/java` is explicitly chmod'ed to `0755` and validated after extraction.
+- Existing installations receive a permission repair when the bundled runtime installer is invoked.
+- The TEST JAVA action repairs the executable permission before launching and reports a clearer error if Android/filesystem policy still blocks execution.

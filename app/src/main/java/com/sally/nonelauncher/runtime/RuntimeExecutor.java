@@ -2,6 +2,8 @@ package com.sally.nonelauncher.runtime;
 
 import android.content.Context;
 import android.os.Build;
+import android.system.ErrnoException;
+import android.system.Os;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -25,6 +27,16 @@ public final class RuntimeExecutor {
     public TestResult testVersion(RuntimeManager.RuntimeInfo runtime) {
         if (runtime == null) return new TestResult(false, "No runtime selected.", -1);
         if (!runtime.javaExecutable.isFile()) return new TestResult(false, "Missing executable: " + runtime.javaExecutable, -1);
+        // TAR extraction and Android filesystem permissions can lose executable bits.
+        runtime.javaExecutable.setExecutable(true, true);
+        try {
+            Os.chmod(runtime.javaExecutable.getAbsolutePath(), 0755);
+        } catch (ErrnoException error) {
+            return new TestResult(false, "Cannot set execute permission on bin/java: " + error.getMessage(), -1);
+        }
+        if (!runtime.javaExecutable.canExecute()) {
+            return new TestResult(false, "bin/java still is not executable after chmod. The filesystem or Android policy may block execution from this directory.", -1);
+        }
 
         String arch = runtime.architecture == null ? "" : runtime.architecture.toLowerCase(Locale.ROOT);
         boolean runtime64 = arch.contains("aarch64") || arch.contains("arm64");
