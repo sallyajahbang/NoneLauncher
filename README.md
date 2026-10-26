@@ -1,26 +1,17 @@
 # NoneLauncher
 
-NoneLauncher is a new Android Java-game launcher project. It is NOT a renamed or rebundled PojavLauncher.
+Standalone Android launcher foundation built from scratch.
 
-The reference project was used only to understand the requirements of Android-to-LWJGL input, pointer grabbing, touch deltas, and the runtime boundary. The launcher/application architecture here is new and intentionally small.
+Package: `com.sally.nonelauncher`
 
-## Current stage
-- Own launcher UI
-- Own GameActivity/GameView
-- Own InputRouter
-- Own JNI NativeInput boundary
-- Multi-touch pointer down/up
-- Relative pointer/camera deltas
-- Keyboard key/scan/modifier forwarding
-- Mouse button/scroll API
-- Grab state API
+## Build
 
-## Next stages
-1. Replace GameView with an actual EGL/OpenGL surface.
-2. Add an isolated Java runtime manager.
-3. Add LWJGL 3 native/runtime loading.
-4. Implement a small GLFW compatibility bridge that consumes NativeInput events.
-5. Add Minecraft version/profile installation.
-6. Add virtual controls on top of the game surface.
+The repository includes the Gradle wrapper, so `gradlew` is part of the project.
 
-Do not copy PojavLauncher source into this project. Implement each layer independently.
+```bash
+./gradlew :app:assembleDebug
+```
+
+GitHub Actions installs Android API 35, Build Tools 35.0.0, CMake 3.22.1 and NDK 27.2.12479018, then builds the debug APK.
+
+The input layer is owned by NoneLauncher and is not copied from PojavLauncher. It currently validates Android touch, multi-touch pointer tracking, mouse buttons, mouse movement, scroll and keyboard routing through the native JNI boundary.

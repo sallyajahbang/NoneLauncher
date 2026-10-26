@@ -2,90 +2,57 @@ name: Build NoneLauncher
 
 on:
   push:
-    branches:
-      - "**"
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
-jobs:
-  build:
-    name: Build NoneLauncher APK
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+jobs:
+  debug:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
           cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK components
+      - name: Install Android SDK packages
         run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          sdkmanager "cmake;3.22.1"
-          yes | sdkmanager --licenses || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;27.2.12479018"
 
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Verify Gradle wrapper
+        run: |
+          test -f gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          chmod +x gradlew
+          ./gradlew --version
 
-      - name: Upload Debug APK
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NoneLauncher-debug
-          path: |
-            app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-
-  release:
-    name: Build Release APK
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK components
-        run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-          sdkmanager "cmake;3.22.1"
-          yes | sdkmanager --licenses || true
-
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
-
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NoneLauncher-release
-          path: |
-            app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
