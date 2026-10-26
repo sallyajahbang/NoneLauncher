@@ -24,6 +24,7 @@ import com.sally.launcher.core.engine.EngineLaunchResult
 import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.core.engine.LaunchProfileBuilder
+import com.sally.launcher.core.engine.JliBridgeDiagnostics
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var runtimeStatusText: TextView
     private lateinit var prepareLaunchButton: MaterialButton
     private lateinit var engineDiagnosticsButton: MaterialButton
+    private lateinit var jvmBridgeButton: MaterialButton
     private lateinit var engineStatusText: TextView
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
@@ -155,10 +157,10 @@ class MainActivity : AppCompatActivity() {
         val engineContent = cardContent(engineCard)
         engineContent.addView(sectionLabel("ENGINE STATUS"))
         addGap(engineContent, 8)
-        engineContent.addView(textView("JNI input queue · Minecraft game bridge pending", 19f, bold = true))
+        engineContent.addView(textView("JVM loader probe · game bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Sally now has a small JNI input queue and an OpenGL ES diagnostic surface. The test verifies graphics and Android input events, but these events are not yet connected to the game's GLFW/LWJGL callbacks and there is no embedded JVM launch yet.",
+            "Sally can now inspect whether the installed Android Java runtime exposes a loadable libjli.so, libjvm.so, and JLI_Launch entry point. This is a loader diagnostic only: it does not start a JVM, and game rendering/input are not connected to LWJGL/GLFW yet.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
@@ -170,6 +172,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { prepareLaunchProfile() }
         }
         engineContent.addView(prepareLaunchButton)
+        addGap(engineContent, 8)
+        jvmBridgeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Probe installed JVM bridge"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { probeJvmBridge() }
+        }
+        engineContent.addView(jvmBridgeButton)
         addGap(engineContent, 8)
         engineDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "Test graphics & input bridge"
@@ -215,7 +225,7 @@ class MainActivity : AppCompatActivity() {
         page.addView(runtimeCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 6  ·  JNI INPUT QUEUE + GLES DIAGNOSTICS", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        page.addView(textView("STAGE 7  ·  JVM JLI LOADER PROBE", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -426,6 +436,50 @@ class MainActivity : AppCompatActivity() {
                     MaterialAlertDialogBuilder(this)
                         .setTitle("Cannot prepare launch profile")
                         .setMessage(error.message ?: "The selected version is missing required launch files.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun probeJvmBridge() {
+        if (!::jvmBridgeButton.isInitialized) return
+        jvmBridgeButton.isEnabled = false
+        jvmBridgeButton.text = "Checking JVM libraries…"
+        engineStatusText.text = "Finding an installed runtime and checking its native JLI/JVM libraries…"
+        ioExecutor.execute {
+            val result = runCatching {
+                val runtime = RuntimeManager(applicationContext).installedRuntimes()
+                    .maxByOrNull { it.majorVersion }
+                    ?: throw IllegalStateException("No verified Java runtime is installed. Install a compatible runtime first.")
+                runtime to JliBridgeDiagnostics.probe(runtime.home)
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                jvmBridgeButton.isEnabled = true
+                jvmBridgeButton.text = "Probe installed JVM bridge"
+                result.onSuccess { (runtime, probe) ->
+                    engineStatusText.text = if (probe.available) {
+                        "JLI loader probe passed for ${runtime.displayName()}. Minecraft launch is still disabled until Android LWJGL/GLFW and renderer integration is complete."
+                    } else {
+                        "JLI loader probe failed for ${runtime.displayName()}. See diagnostic details."
+                    }
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(if (probe.available) "JVM native loader available" else "JVM native loader not ready")
+                        .setMessage(
+                            "Runtime: ${runtime.displayName()}\n" +
+                                "Path: ${runtime.home.absolutePath}\n\n" +
+                                probe.details +
+                                "\n\nThis probe only maps native runtime libraries and checks JLI_Launch. It does not start a JVM or launch Minecraft."
+                        )
+                        .setPositiveButton("OK", null)
+                        .show()
+                }.onFailure { error ->
+                    engineStatusText.text = "JLI loader probe could not run. Install and verify a Java runtime first."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("JVM bridge probe failed")
+                        .setMessage(error.message ?: "Could not inspect the installed runtime.")
                         .setPositiveButton("OK", null)
                         .show()
                 }

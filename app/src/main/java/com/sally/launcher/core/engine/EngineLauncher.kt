@@ -14,6 +14,6 @@ sealed class EngineLaunchResult {
 /** The runtime and game-file installers are separate from the not-yet-integrated JVM/native engine. */
 class EngineLauncherNotIntegrated : EngineLauncher {
     override fun launch(versionId: String): EngineLaunchResult = EngineLaunchResult.NotReady(
-        "Minecraft $versionId is selected, but Sally's JVM/JNI launch bridge, Android-native renderer, and keyboard/mouse/touch input pipeline are not integrated yet. Installing a Java runtime alone cannot launch the game."
+        "Minecraft $versionId is selected. Sally can now probe whether an installed Java runtime exposes its native JLI launcher, but it does not yet execute JLI_Launch or connect Android-compatible LWJGL/GLFW, renderer, and input callbacks. Installing a runtime alone cannot launch the game."
     )
 }
