@@ -196,7 +196,7 @@ public final class RuntimeManager {
                 String content = new String(bytes, 0, offset, StandardCharsets.UTF_8);
                 for (String line : content.split("\\r?\\n")) {
                     if (line.startsWith("JAVA_VERSION=\"")) version = unquote(line.substring(13));
-                    else if (line.startsWith("OS_ARCH=\"")) arch = unquote(line.substring(8));
+                    else if (line.startsWith("OS_ARCH=\"")) arch = unquote(line.substring(9));
                 }
             }
         } catch (IOException ignored) { return null; }

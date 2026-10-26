@@ -31,7 +31,7 @@ public final class RuntimeActivity extends Activity {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(20)); root.setBackgroundColor(Color.rgb(13, 17, 23));
         TextView title = text("Java Runtime Manager", 25, Color.WHITE); title.setTypeface(null, 1); root.addView(title);
-        TextView description = text("Bundled Java 17 runtime for 32-bit ARM. It is installed automatically on first open. ARM64-only devices may need a different runtime. Java execution and Minecraft launch are not wired up yet.", 14, Color.rgb(170, 183, 198));
+        TextView description = text("Bundled Java 17 ARM64 runtime. It is installed automatically on first open. Use TEST JAVA to check whether a runtime can execute on this device. Minecraft launch is not wired up yet.", 14, Color.rgb(170, 183, 198));
         description.setPadding(0, dp(8), 0, dp(14)); root.addView(description);
         Button importButton = button("IMPORT ANOTHER RUNTIME ZIP");
         importButton.setOnClickListener(v -> chooseArchive()); root.addView(importButton, matchWrap());
@@ -46,7 +46,7 @@ public final class RuntimeActivity extends Activity {
     }
 
     private void installBundledRuntimeInBackground() {
-        status.setText("Installing bundled Java 17 ARM32 runtime. This may take a minute…");
+        status.setText("Installing bundled Java 17 ARM64 runtime. This may take a minute…");
         worker.execute(() -> {
             try {
                 RuntimeManager.RuntimeInfo info = manager.installBundledRuntime();
@@ -98,7 +98,7 @@ public final class RuntimeActivity extends Activity {
         list.removeAllViews();
         List<RuntimeManager.RuntimeInfo> runtimes = manager.scan();
         if (runtimes.isEmpty()) {
-            TextView empty = text("No valid runtime found. The bundled ARM32 runtime may not have installed. You can import a ZIP containing release and bin/java files.", 14, Color.LTGRAY);
+            TextView empty = text("No valid runtime found. The bundled ARM64 runtime may not have installed. You can import a ZIP containing release and bin/java files.", 14, Color.LTGRAY);
             empty.setPadding(0, dp(16), 0, dp(16)); list.addView(empty);
         }
         for (RuntimeManager.RuntimeInfo runtime : runtimes) {
@@ -106,10 +106,25 @@ public final class RuntimeActivity extends Activity {
             card.setBackgroundColor(Color.rgb(25, 33, 44));
             TextView name = text(runtime.name, 17, Color.WHITE); name.setTypeface(null, 1); card.addView(name);
             card.addView(text("Java: " + runtime.version + "  •  Architecture: " + runtime.architecture, 13, Color.rgb(170, 183, 198)));
-            card.addView(text("Detected executable: bin/java\nStored in app-private storage", 12, Color.rgb(117, 185, 255)));
+            card.addView(text("Executable: bin/java\nStored in app-private storage", 12, Color.rgb(117, 185, 255)));
+            Button test = button("TEST JAVA");
+            test.setOnClickListener(v -> testRuntime(runtime));
+            card.addView(test, matchWrap());
             LinearLayout.LayoutParams params = matchWrap(); params.bottomMargin = dp(10); list.addView(card, params);
         }
-        if (status != null && !runtimes.isEmpty()) status.setText(runtimes.size() + " runtime(s) detected · not yet executable from launcher");
+        if (status != null && !runtimes.isEmpty()) status.setText(runtimes.size() + " runtime(s) detected · use TEST JAVA to verify execution");
+    }
+
+
+    private void testRuntime(RuntimeManager.RuntimeInfo runtime) {
+        status.setText("Testing " + runtime.name + " with java -version…");
+        worker.execute(() -> {
+            RuntimeExecutor.TestResult result = new RuntimeExecutor(this).testVersion(runtime);
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                status.setText((result.success ? "JAVA TEST PASSED · " : "JAVA TEST FAILED · ") + runtime.name + "\n" + result.output);
+            });
+        });
     }
 
     private Button button(String label) { Button b = new Button(this); b.setText(label); return b; }
