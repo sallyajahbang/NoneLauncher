@@ -1,111 +1,91 @@
-name: Android CI
+name: Build NoneLauncher
 
 on:
-  pull_request:
-    branches-ignore:
-      - 'l10n_v3_openjdk' 
-    types: [ opened, reopened ]
   push:
-    branches-ignore:
-      - 'l10n_v3_openjdk'
+    branches:
+      - "**"
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    env:
-      GPLAY_KEYSTORE_PASSWORD: ${{ secrets.GPLAY_KEYSTORE_PASSWORD }}
-      CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+    name: Build NoneLauncher APK
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
         with:
-          submodules: "recursive"
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '21'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Get JRE 8
-        uses: dawidd6/action-download-artifact@v9
-        with:
-          workflow: build.yml
-          path: app_pojavlauncher/src/main/assets/components/jre
-          workflow_conclusion: completed
-          repo: AngelAuraMC/angelauramc-openjdk-build
-          branch: buildjre8
-          name: jre8-pojav
-
-      # - name: Get JRE17
-      #   uses: dawidd6/action-download-artifact@v9
-      #   with:
-      #     workflow: build.yml
-      #     path: app_pojavlauncher/src/main/assets/components/jre-new
-      #     workflow_conclusion: completed
-      #     repo: AngelAuraMC/angelauramc-openjdk-build
-      #     branch: buildjre17-21
-      #     name: jre17-pojav
-      #
-      # - name: Get JRE21
-      #   uses: dawidd6/action-download-artifact@v9
-      #   with:
-      #     workflow: build.yml
-      #     path: app_pojavlauncher/src/main/assets/components/jre-21
-      #     workflow_conclusion: completed
-      #     repo: AngelAuraMC/angelauramc-openjdk-build
-      #     branch: buildjre17-21
-      #     name: jre21-pojav
-      #
-      # - name: Get JRE25
-      #   uses: dawidd6/action-download-artifact@v9
-      #   with:
-      #     workflow: build.yml
-      #     path: app_pojavlauncher/src/main/assets/components/jre-25
-      #     workflow_conclusion: completed
-      #     repo: FCL-Team/Android-OpenJDK-Build
-      #     branch: Build_JRE_25
-      #     name: jre25-multiarch
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          validate-wrappers: false
-          gradle-version: "9.6.1"
-
-      - name: Run scripts
+      - name: Install Android SDK components
         run: |
-          bash ./scripts/languagelist_updater.sh
-          mkdir out
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "cmake;3.22.1"
+          yes | sdkmanager --licenses || true
 
-      - name: Build Release .apk
-        run: |
-          # Build the launcher
-          gradle :app_pojavlauncher:assembleRelease
-          mv app_pojavlauncher/build/outputs/apk/release/app_pojavlauncher-release.apk out/app-release.apk
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-      - name: Gen md5sums
-        run: |
-          md5sum out/app-release.apk > out/app-release.md5
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Build Debug .apk
-        run: |
-          # Build the launcher
-          gradle :app_pojavlauncher:assembleDebug
-          mv app_pojavlauncher/build/outputs/apk/debug/app_pojavlauncher-debug.apk out/app-debug.apk
-
-      - name: Gen md5sums
-        run: |
-          md5sum out/app-debug.apk > out/app-debug.md5
-
-      - name: Upload debug APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug (recommended)
-          path: out/app-debug.*
+          name: NoneLauncher-debug
+          path: |
+            app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
-      - name: Upload release APK
+  release:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "cmake;3.22.1"
+          yes | sdkmanager --licenses || true
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: out/app-release.*
+          name: NoneLauncher-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
