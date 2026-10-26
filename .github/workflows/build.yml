@@ -37,7 +37,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android build packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.3.11579264" "cmake;3.22.1"
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew

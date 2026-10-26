@@ -1,5 +1,6 @@
 package com.sally.launcher
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var runtimeButton: MaterialButton
     private lateinit var runtimeStatusText: TextView
     private lateinit var prepareLaunchButton: MaterialButton
+    private lateinit var engineDiagnosticsButton: MaterialButton
     private lateinit var engineStatusText: TextView
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
@@ -153,10 +155,10 @@ class MainActivity : AppCompatActivity() {
         val engineContent = cardContent(engineCard)
         engineContent.addView(sectionLabel("ENGINE STATUS"))
         addGap(engineContent, 8)
-        engineContent.addView(textView("Runtime manager · launch bridge pending", 19f, bold = true))
+        engineContent.addView(textView("JNI input queue · Minecraft game bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Sally can now resolve Mojang's JVM/game arguments and classpath for the selected version. This prepares a diagnostic launch profile only; the Android JVM/JNI bridge, native renderer, and input pipeline are not connected yet.",
+            "Sally now has a small JNI input queue and an OpenGL ES diagnostic surface. The test verifies graphics and Android input events, but these events are not yet connected to the game's GLFW/LWJGL callbacks and there is no embedded JVM launch yet.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
@@ -168,6 +170,16 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { prepareLaunchProfile() }
         }
         engineContent.addView(prepareLaunchButton)
+        addGap(engineContent, 8)
+        engineDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Test graphics & input bridge"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, com.sally.launcher.core.engine.EngineDiagnosticsActivity::class.java))
+            }
+        }
+        engineContent.addView(engineDiagnosticsButton)
         addGap(engineContent, 8)
         engineStatusText = textView(
             "Profile not prepared. Install version files and a compatible Java runtime first.",
@@ -203,7 +215,7 @@ class MainActivity : AppCompatActivity() {
         page.addView(runtimeCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 5  ·  LAUNCH PROFILE RESOLVER", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        page.addView(textView("STAGE 6  ·  JNI INPUT QUEUE + GLES DIAGNOSTICS", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -393,7 +405,7 @@ class MainActivity : AppCompatActivity() {
                 refreshButton.isEnabled = true
                 playButton.isEnabled = true
                 result.onSuccess { profile ->
-                    engineStatusText.text = "Profile resolved: Java ${profile.runtimeMajor}, ${profile.classpathEntries.size} classpath entries, ${profile.jvmArguments.size} JVM args, ${profile.gameArguments.size} game args. Engine bridge still pending."
+                    engineStatusText.text = "Profile resolved: Java ${profile.runtimeMajor}, ${profile.classpathEntries.size} classpath entries, ${profile.jvmArguments.size} JVM args, ${profile.gameArguments.size} game args. JVM/GLFW game bridge still pending."
                     MaterialAlertDialogBuilder(this)
                         .setTitle("Launch profile prepared")
                         .setMessage(

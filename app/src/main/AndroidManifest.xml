@@ -10,6 +10,11 @@
         android:theme="@style/Theme.SallyLauncher"
         android:usesCleartextTraffic="false">
         <activity
+            android:name=".core.engine.EngineDiagnosticsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:label="Engine diagnostics" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="unspecified"

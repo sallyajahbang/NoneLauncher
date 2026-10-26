@@ -1,34 +1,40 @@
-# Sally Launcher — Stage 4
+# Sally Launcher — Stage 6
 
-A new Android Minecraft: Java Edition launcher codebase informed by Pojav/Amethyst runtime architecture. This is not a rebranded PojavLauncher. Package name: `com.sally.launcher`.
+A fresh Android Minecraft: Java Edition launcher codebase with a Material 3-style interface, official Mojang version catalog, version file installer, Android Java runtime manager, and diagnostic launch-profile builder. Package name: `com.sally.launcher`.
 
-## Included in this stage
+## This stage adds
 
-- Material 3-style Android UI and official Mojang version catalog with offline cache.
-- Minecraft version file installer for the client JAR, common Java library artifacts and assets, with SHA-1 verification when supplied by official metadata.
-- Android Java runtime manager that reads the selected version's declared Java major, selects a runtime for the device ABI, obtains the upstream runtime asset digest, verifies SHA-256, and safely extracts the runtime into app-private storage.
-- Runtime archive extraction guards against path traversal, oversized archives and excessive entry counts.
-- GitHub Actions workflow that builds a debug APK and uploads `sally-launcher-debug-apk`.
+- A C++17 JNI shared library (`libsallybridge.so`) built for ARM64, ARM32, x86_64 and x86 Android ABIs.
+- A bounded, mutex-protected native input queue for touch, key, mouse move/button, scroll, and viewport diagnostic events. Queue overflow rejects new events instead of overwriting old ones.
+- An Android OpenGL ES 2.0 diagnostic screen. The visible marker follows touch/mouse position, and the screen displays native bridge health plus event counts.
+- A `Test graphics & input bridge` button in the main launcher UI.
+- GitHub Actions setup for Android NDK 26.3 and CMake 3.22.1, so native compilation happens as part of `:app:assembleDebug`.
 
 ## Important limitation
 
-**This stage does not launch Minecraft yet.** Runtime files can be downloaded and installed, but the JVM/JNI invocation bridge, LWJGL/graphics context integration, native game libraries and keyboard/mouse/touch/gamepad input bridge are not integrated. The Play button deliberately reports this instead of pretending the game started. Java desktop `bin/java` cannot simply be spawned as an ordinary Android process; a compatible native bridge is required.
+**This is not a playable Minecraft engine yet.** This stage proves that Android GLES can draw a diagnostic scene and Android input can cross a JNI boundary into a native queue. The queue is not wired to LWJGL/GLFW callbacks, and the app does not yet invoke an embedded OpenJDK JVM. Minecraft's Android-compatible native libraries, the actual runtime/JNI invocation bridge, renderer integration, audio, and complete keyboard/mouse/touch/gamepad behavior still need to be integrated. The Play button deliberately continues to report that the game engine is not ready.
 
 ## Build
 
-Requirements: JDK 17, Android SDK platform 35 and build-tools 35.0.0.
+Requirements: JDK 17, Android SDK platform 35, build-tools 35.0.0, NDK 26.3.11579264, and CMake 3.22.1.
 
 ```bash
 chmod +x ./gradlew
 ./gradlew :app:assembleDebug
 ```
 
-APK output: `app/build/outputs/apk/debug/app-debug.apk`.
+APK output: `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions uploads the same artifact as `sally-launcher-debug-apk`.
 
-GitHub Actions runs on pushes to `main`/`master`, pull requests and manual dispatch. Download the artifact named `sally-launcher-debug-apk` from the workflow run.
+## Test the diagnostic screen
 
-## Runtime source and licensing
+1. Install the debug APK on an Android device.
+2. Open Sally Launcher and tap **Test graphics & input bridge**.
+3. Verify the geometric marker is drawn on a dark background.
+4. Touch and drag across the canvas. With a physical mouse, try moving, clicking and scrolling. A physical keyboard can also send key events.
+5. Check whether `Native events processed` increases and `Last event` changes.
 
-The Android OpenJDK runtime download format currently follows the public Amethyst Android runtime distribution. Runtime assets are not bundled into the APK. Runtime downloads must pass SHA-256 verification before extraction. Review upstream licensing and notices before redistribution: https://github.com/AngelAuraMC/angelauramc-openjdk-build and https://github.com/AngelAuraMC/Amethyst-Android.
+A successful diagnostic means the GLES surface and diagnostic JNI event queue work; it does **not** prove that Minecraft input works.
 
-The project is a fresh implementation; reusing any upstream native/Java components in later stages requires separate compatibility and license review.
+## Upstream relationship
+
+The architecture is informed by public Pojav/Amethyst engineering patterns, but this diagnostic bridge is newly authored and does not copy their native input implementation. Any future reuse of upstream code or native artifacts must be reviewed for license compatibility and include the appropriate notices. Runtime distribution details are documented upstream at https://github.com/AngelAuraMC/angelauramc-openjdk-build and https://github.com/AngelAuraMC/Amethyst-Android.
