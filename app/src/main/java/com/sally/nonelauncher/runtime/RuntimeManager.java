@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.tukaani.xz.XZInputStream;
 
 /** Local runtime archive catalog. Import validates structure; it does not execute the runtime. */
 public final class RuntimeManager {
@@ -44,6 +47,69 @@ public final class RuntimeManager {
         }
         Collections.sort(result, Comparator.comparing(a -> a.name.toLowerCase(Locale.ROOT)));
         return result;
+    }
+
+    /** Installs the bundled Android ARM64 Java 17 runtime from app assets on first use. */
+    public RuntimeInfo installBundledRuntime() throws IOException {
+        File root = getRuntimeDirectory();
+        File destination = new File(root, "Java17-ARM64");
+        RuntimeInfo existing = inspect(destination);
+        if (existing != null) return existing;
+        if (destination.exists()) deleteRecursively(destination);
+
+        File staging = new File(root, ".bundled-import-" + System.nanoTime());
+        if (!staging.mkdirs()) throw new IOException("Cannot create runtime staging directory");
+        try (InputStream asset = context.getAssets().open("runtimes/jre17.tar.xz");
+             XZInputStream xz = new XZInputStream(new BufferedInputStream(asset));
+             TarArchiveInputStream tar = new TarArchiveInputStream(xz)) {
+            long expanded = 0;
+            int entries = 0;
+            TarArchiveEntry entry;
+            byte[] buffer = new byte[32768];
+            String stagingPath = staging.getCanonicalPath();
+            while ((entry = tar.getNextTarEntry()) != null) {
+                if (++entries > MAX_ENTRIES) throw new IOException("Bundled runtime contains too many entries");
+                String name = entry.getName().replace('\\', '/');
+                if (name.startsWith("/") || name.matches("^[A-Za-z]:.*")) throw new IOException("Unsafe path in bundled runtime");
+                // The archive's symlinks are license-document aliases; skipping them avoids unsafe links.
+                if (entry.isSymbolicLink() || entry.isLink()) continue;
+                File out = new File(staging, name);
+                String outPath = out.getCanonicalPath();
+                if (!outPath.equals(stagingPath) && !outPath.startsWith(stagingPath + File.separator)) {
+                    throw new IOException("Unsafe path in bundled runtime");
+                }
+                if (entry.isDirectory()) {
+                    if (!out.isDirectory() && !out.mkdirs()) throw new IOException("Cannot create runtime directory");
+                    continue;
+                }
+                if (!entry.isFile()) continue;
+                File parent = out.getParentFile();
+                if (parent != null && !parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create runtime directory");
+                try (FileOutputStream stream = new FileOutputStream(out)) {
+                    int n;
+                    while ((n = tar.read(buffer)) != -1) {
+                        expanded += n;
+                        if (expanded > MAX_EXPANDED_BYTES) throw new IOException("Bundled runtime exceeds 1 GiB expanded limit");
+                        stream.write(buffer, 0, n);
+                    }
+                }
+                if ((entry.getMode() & 0111) != 0) out.setExecutable(true, true);
+            }
+            File java = new File(staging, "bin/java");
+            if (!java.isFile()) throw new IOException("Bundled archive does not contain bin/java");
+            java.setExecutable(true, true);
+            if (!new File(staging, "release").isFile()) throw new IOException("Bundled archive does not contain release metadata");
+            if (!staging.renameTo(destination)) throw new IOException("Cannot save bundled runtime");
+            RuntimeInfo installed = inspect(destination);
+            if (installed == null) {
+                deleteRecursively(destination);
+                throw new IOException("Bundled runtime validation failed");
+            }
+            return installed;
+        } catch (IOException | RuntimeException error) {
+            deleteRecursively(staging);
+            throw error;
+        }
     }
 
     public RuntimeInfo importZip(Uri uri, String displayName) throws IOException {

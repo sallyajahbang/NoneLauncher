@@ -31,16 +31,38 @@ public final class RuntimeActivity extends Activity {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(20), dp(20), dp(20)); root.setBackgroundColor(Color.rgb(13, 17, 23));
         TextView title = text("Java Runtime Manager", 25, Color.WHITE); title.setTypeface(null, 1); root.addView(title);
-        TextView description = text("Import and inspect runtime archives. This stage does not execute Java or launch Minecraft yet.", 14, Color.rgb(170, 183, 198));
+        TextView description = text("Bundled Java 17 runtime for 32-bit ARM. It is installed automatically on first open. ARM64-only devices may need a different runtime. Java execution and Minecraft launch are not wired up yet.", 14, Color.rgb(170, 183, 198));
         description.setPadding(0, dp(8), 0, dp(14)); root.addView(description);
-        Button importButton = button("IMPORT RUNTIME ZIP");
+        Button importButton = button("IMPORT ANOTHER RUNTIME ZIP");
         importButton.setOnClickListener(v -> chooseArchive()); root.addView(importButton, matchWrap());
         Button refresh = button("RESCAN RUNTIMES"); refresh.setOnClickListener(v -> refreshList()); root.addView(refresh, matchWrap());
         status = text("Runtime storage: app-private directory", 12, Color.rgb(117, 185, 255)); status.setPadding(0, dp(12), 0, dp(8)); root.addView(status);
         ScrollView scroll = new ScrollView(this); list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); scroll.addView(list);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         Button back = button("BACK"); back.setOnClickListener(v -> finish()); root.addView(back, matchWrap());
-        setContentView(root); refreshList();
+        setContentView(root);
+        if (manager.scan().isEmpty()) installBundledRuntimeInBackground();
+        else refreshList();
+    }
+
+    private void installBundledRuntimeInBackground() {
+        status.setText("Installing bundled Java 17 ARM32 runtime. This may take a minute…");
+        worker.execute(() -> {
+            try {
+                RuntimeManager.RuntimeInfo info = manager.installBundledRuntime();
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    status.setText("Bundled runtime installed: " + info.name);
+                    refreshList();
+                });
+            } catch (IOException | RuntimeException error) {
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    status.setText("Bundled runtime install failed: " + (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
+                    refreshList();
+                });
+            }
+        });
     }
 
     private void chooseArchive() {
@@ -60,7 +82,7 @@ public final class RuntimeActivity extends Activity {
             if (segment != null && !segment.trim().isEmpty()) name = segment;
         }
         final String importName = name;
-        status.setText("Importing archive safely…");
+        status.setText("Importing runtime archive safely…");
         worker.execute(() -> {
             try {
                 RuntimeManager.RuntimeInfo info = manager.importZip(uri, importName);
@@ -76,7 +98,7 @@ public final class RuntimeActivity extends Activity {
         list.removeAllViews();
         List<RuntimeManager.RuntimeInfo> runtimes = manager.scan();
         if (runtimes.isEmpty()) {
-            TextView empty = text("No valid runtime imported. Choose a ZIP containing a Java runtime with release and bin/java files.", 14, Color.LTGRAY);
+            TextView empty = text("No valid runtime found. The bundled ARM32 runtime may not have installed. You can import a ZIP containing release and bin/java files.", 14, Color.LTGRAY);
             empty.setPadding(0, dp(16), 0, dp(16)); list.addView(empty);
         }
         for (RuntimeManager.RuntimeInfo runtime : runtimes) {
