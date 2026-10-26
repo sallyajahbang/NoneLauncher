@@ -22,4 +22,8 @@
     <dimen name="lui_52">52dp</dimen>
     <dimen name="lui_text_play">20sp</dimen>
     <dimen name="lui_text_title">16sp</dimen>
+    <dimen name="lui_168">168dp</dimen>
+    <dimen name="lui_32">32dp</dimen>
+    <dimen name="lui_56">56dp</dimen>
+    <dimen name="lui_96">96dp</dimen>
 </resources>

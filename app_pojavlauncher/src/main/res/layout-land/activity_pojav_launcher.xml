@@ -14,13 +14,13 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent" />
 
-    <!-- Account pill, top left -->
+    <!-- Account chip, top left -->
     <com.kdt.mcgui.mcAccountSpinner
         android:id="@+id/account_spinner"
         android:layout_width="@dimen/lui_190"
         android:layout_height="@dimen/lui_40"
-        android:layout_marginStart="@dimen/lui_8"
-        android:layout_marginTop="@dimen/lui_6"
+        android:layout_marginStart="@dimen/lui_12"
+        android:layout_marginTop="@dimen/lui_8"
 
         android:dropDownWidth="@dimen/lui_250"
         android:dropDownVerticalOffset="@dimen/lui_40"
@@ -28,23 +28,24 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Settings, top right -->
+    <!-- Settings / home, top right (tonal icon button) -->
     <ImageButton
         android:id="@+id/setting_button"
         android:layout_width="@dimen/lui_40"
         android:layout_height="@dimen/lui_40"
-        android:layout_marginTop="@dimen/lui_6"
-        android:layout_marginEnd="@dimen/lui_8"
-        android:background="@drawable/bg_launcher_pill"
+        android:layout_marginTop="@dimen/lui_8"
+        android:layout_marginEnd="@dimen/lui_12"
+        android:background="@drawable/bg_md3_tonal_circle"
         android:contentDescription="@string/launcher_cd_settings"
         android:src="@drawable/ic_menu_settings"
+        android:tint="@color/md_on_secondary_container"
         android:scaleType="fitCenter"
         android:padding="@dimen/lui_8"
 
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Download / unpack progress, shown as a dialog over everything while tasks are running -->
+    <!-- Download / unpack progress, shown as a dialog while tasks are running -->
     <com.kdt.mcgui.ProgressLayout
         android:id="@+id/progress_layout"
         android:layout_width="match_parent"

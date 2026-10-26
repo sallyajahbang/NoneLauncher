@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Sunset backdrop for the main screen. Replace with your own artwork if you like. -->
+<!-- Dark Material 3 backdrop for the main screen. Swap for your own artwork if you like. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <gradient
         android:angle="270"
-        android:startColor="#FFB347"
-        android:centerColor="#E0609A"
-        android:endColor="#7B3FA8"
+        android:startColor="@color/md_primary_container"
+        android:endColor="@color/md_surface"
         android:type="linear" />
 </shape>

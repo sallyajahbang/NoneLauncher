@@ -8,26 +8,26 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_launcher_scene">
 
-    <!-- Soft dark fade behind the bottom bar -->
+    <!-- Soft fade behind the bottom bar -->
     <View
         android:id="@+id/_background_display_view"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/lui_80"
+        android:layout_height="@dimen/lui_96"
         android:background="@drawable/bg_launcher_bottom_bar"
         app:layout_constraintBottom_toBottomOf="parent" />
 
     <!-- Version / profile, bottom left -->
     <com.kdt.mcgui.mcVersionSpinner
         android:id="@+id/mc_version_spinner"
-        android:layout_width="@dimen/lui_150"
-        android:layout_height="@dimen/lui_40"
-        android:layout_marginStart="@dimen/lui_8"
-        android:layout_marginBottom="@dimen/lui_10"
-        android:background="@drawable/bg_launcher_pill"
-        android:drawableEnd="@drawable/spinner_arrow"
+        android:layout_width="@dimen/lui_190"
+        android:layout_height="@dimen/lui_48"
+        android:layout_marginStart="@dimen/lui_16"
+        android:layout_marginBottom="@dimen/lui_16"
+        android:background="@drawable/bg_md3_surface_pill"
+        android:drawableEnd="@drawable/ic_md_arrow_drop_down"
 
-        app:drawableEndPadding="@dimen/lui_1"
-        app:drawableEndSize="@dimen/lui_12"
+        app:drawableEndPadding="@dimen/lui_4"
+        app:drawableEndSize="@dimen/lui_24"
         app:drawableStartIntegerScaling="true"
         app:drawableStartSize="@dimen/lui_30"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -35,40 +35,42 @@
 
     <ImageButton
         android:id="@+id/edit_profile_button"
-        android:layout_width="@dimen/lui_40"
-        android:layout_height="@dimen/lui_40"
-        android:layout_marginStart="@dimen/lui_4"
-        android:background="@drawable/bg_launcher_pill"
+        android:layout_width="@dimen/lui_48"
+        android:layout_height="@dimen/lui_48"
+        android:layout_marginStart="@dimen/lui_8"
+        android:background="@drawable/bg_md3_tonal_circle"
         android:contentDescription="@string/launcher_cd_edit_profile"
-        android:padding="@dimen/lui_8"
+        android:padding="@dimen/lui_12"
         android:src="@drawable/ic_edit_profile"
+        android:tint="@color/md_on_secondary_container"
         app:layout_constraintBottom_toBottomOf="@id/mc_version_spinner"
         app:layout_constraintStart_toEndOf="@id/mc_version_spinner"
         app:layout_constraintTop_toTopOf="@id/mc_version_spinner" />
 
-    <!-- Play, bottom centre -->
-    <androidx.appcompat.widget.AppCompatButton
+    <!-- Play, bottom centre (Material 3 filled button) -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/play_button"
-        android:layout_width="@dimen/lui_150"
-        android:layout_height="@dimen/lui_48"
-        android:layout_marginBottom="@dimen/lui_8"
-        android:background="@drawable/bg_play_button"
-        android:fontFamily="@font/noto_sans_bold"
+        style="@style/Widget.Material3.Button.Icon"
+        android:layout_width="@dimen/lui_168"
+        android:layout_height="@dimen/lui_56"
+        android:layout_marginBottom="@dimen/lui_16"
         android:text="@string/main_play"
         android:textAllCaps="true"
-        android:textColor="@android:color/white"
         android:textSize="@dimen/lui_text_play"
+        app:cornerRadius="@dimen/lui_28"
+        app:icon="@drawable/ic_md_play_arrow"
+        app:iconSize="@dimen/lui_28"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
-    <!-- Shortcuts, bottom right (scrolls sideways if the screen is narrow) -->
+    <!-- Shortcuts, bottom right (scrolls sideways on narrow screens) -->
     <HorizontalScrollView
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/lui_8"
-        android:layout_marginEnd="@dimen/lui_8"
-        android:layout_marginBottom="@dimen/lui_10"
+        android:layout_marginStart="@dimen/lui_12"
+        android:layout_marginEnd="@dimen/lui_16"
+        android:layout_marginBottom="@dimen/lui_16"
         android:fillViewport="true"
         android:scrollbars="none"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -81,60 +83,54 @@
             android:layout_gravity="end"
             android:gravity="end"
             android:orientation="horizontal">
-            <com.kdt.mcgui.LauncherMenuButton
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/news_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/mcl_tab_wiki"
-                android:drawableStart="@drawable/ic_menu_news" />
-            <com.kdt.mcgui.LauncherMenuButton
+                app:icon="@drawable/ic_menu_news" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/discord_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/mcl_button_discord"
-                android:drawableStart="@drawable/ic_discord" />
-            <com.kdt.mcgui.LauncherMenuButton
+                app:icon="@drawable/ic_discord" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/custom_control_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/mcl_option_customcontrol"
-                android:drawableStart="@drawable/ic_menu_custom_controls" />
-            <com.kdt.mcgui.LauncherMenuButton
+                app:icon="@drawable/ic_menu_custom_controls" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/install_jar_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/main_install_jar_file"
-                android:drawableStart="@drawable/ic_menu_install_jar" />
-            <com.kdt.mcgui.LauncherMenuButton
+                app:icon="@drawable/ic_menu_install_jar" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/share_logs_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/main_share_logs"
-                android:drawableStart="@android:drawable/ic_menu_share" />
-            <com.kdt.mcgui.LauncherMenuButton
+                app:icon="@drawable/ic_md_share" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/open_files_button"
-                style="@style/LauncherMenuButton.Universal"
-                android:layout_width="@dimen/lui_44"
-                android:layout_height="@dimen/lui_40"
-                android:layout_marginStart="@dimen/lui_4"
-                android:background="@drawable/bg_launcher_pill"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="@dimen/lui_48"
+                android:layout_height="@dimen/lui_48"
+                android:layout_marginStart="@dimen/lui_8"
                 android:contentDescription="@string/mcl_button_open_directory"
-                android:drawableStart="@drawable/ic_folder" />
+                app:icon="@drawable/ic_folder" />
         </LinearLayout>
     </HorizontalScrollView>
 

@@ -281,13 +281,8 @@ public class LauncherActivity extends BaseActivity {
     private WeakReference<Runnable> mRequestMicrophonePermissionRunnable;
 
     @Override
-    protected boolean shouldIgnoreNotch() {
-        return getResources().getConfiguration().orientation == ORIENTATION_PORTRAIT;
-    }
-
-    @Override
     public boolean setFullscreen() {
-        return false;
+        return true; // immersive, edge-to-edge landscape launcher
     }
 
     @Override
