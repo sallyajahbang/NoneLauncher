@@ -6,46 +6,54 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
+    <!-- Holding most of the dynamic content, fills the whole screen -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/container_fragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Account pill, top left -->
     <com.kdt.mcgui.mcAccountSpinner
         android:id="@+id/account_spinner"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/_52sdp"
+        android:layout_width="@dimen/lui_190"
+        android:layout_height="@dimen/lui_40"
+        android:layout_marginStart="@dimen/lui_8"
+        android:layout_marginTop="@dimen/lui_6"
 
-        android:dropDownWidth="@dimen/_250sdp"
-        android:dropDownVerticalOffset="@dimen/_52sdp"
+        android:dropDownWidth="@dimen/lui_250"
+        android:dropDownVerticalOffset="@dimen/lui_40"
 
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Settings, top right -->
     <ImageButton
         android:id="@+id/setting_button"
-        android:layout_width="@dimen/_52sdp"
-        android:layout_height="@dimen/_52sdp"
-        android:background="?attr/selectableItemBackground"
+        android:layout_width="@dimen/lui_40"
+        android:layout_height="@dimen/lui_40"
+        android:layout_marginTop="@dimen/lui_6"
+        android:layout_marginEnd="@dimen/lui_8"
+        android:background="@drawable/bg_launcher_pill"
+        android:contentDescription="@string/launcher_cd_settings"
         android:src="@drawable/ic_menu_settings"
         android:scaleType="fitCenter"
-        android:paddingVertical="@dimen/_8sdp"
+        android:padding="@dimen/lui_8"
 
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Holding most of the dynamic content -->
-    <androidx.fragment.app.FragmentContainerView
-        android:id="@+id/container_fragment"
-
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@+id/progress_layout"
-        app:layout_constraintTop_toBottomOf="@+id/account_spinner" />
-
-
+    <!-- Download / unpack progress, shown as a dialog over everything while tasks are running -->
     <com.kdt.mcgui.ProgressLayout
         android:id="@+id/progress_layout"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
+        android:visibility="gone"
 
-        app:layout_constraintBottom_toBottomOf="parent" />
-
-
-
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -140,6 +140,10 @@ public class LauncherActivity extends BaseActivity {
         public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment f) {
             mSettingsButton.setImageDrawable(ContextCompat.getDrawable(getBaseContext(), f instanceof MainMenuFragment
                     ? R.drawable.ic_menu_settings : R.drawable.ic_menu_home));
+            // The main screen is full-bleed art under the floating account/settings pills;
+            // every other screen starts below them so its content isn't covered.
+            mFragmentView.setPadding(0, f instanceof MainMenuFragment ? 0
+                    : getResources().getDimensionPixelOffset(R.dimen.lui_52), 0, 0);
         }
     };
 

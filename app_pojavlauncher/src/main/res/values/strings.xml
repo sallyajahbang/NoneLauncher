@@ -517,4 +517,6 @@
     <string name="angelica_found_sfpew_notice">Angelica mod found, Simple FPE Wrapper not needed</string>
     <string name="use_angle_checkbox">Use ANGLE (might help FPS)</string>
 
+    <string name="launcher_cd_settings">Settings</string>
+    <string name="launcher_cd_edit_profile">Edit profile</string>
 </resources>

@@ -126,7 +126,10 @@ public class mcVersionSpinner extends ExtendedTextView {
                     mPopupWindow.dismiss();
                     return;
                 }
-                mPopupWindow.showAsDropDown(mcVersionSpinner.this, 0, offset);
+                // The version bar sits at the bottom of the screen, so open the list upwards
+                int popupWidth = Math.max(getWidth(), getResources().getDimensionPixelOffset(R.dimen.lui_240));
+                mPopupWindow.setWidth(popupWidth);
+                mPopupWindow.showAsDropDown(mcVersionSpinner.this, 0, -(getHeight() + mPopupWindow.getHeight()) - offset);
                 // Post() is required for the layout inflation phase
                 post(() -> mListView.setSelection(mSelectedIndex));
             }
