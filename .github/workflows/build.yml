@@ -34,7 +34,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # The legacy SDK package "tools" is no longer published.
           packages: platform-tools
 
       - name: Install Android build packages
@@ -42,6 +41,9 @@ jobs:
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+
+      - name: Validate Gradle wrapper
+        run: ./gradlew --version
 
       - name: Build APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug

@@ -23,6 +23,7 @@ import com.sally.launcher.core.engine.EngineLaunchResult
 import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.model.VersionCatalog
 import com.sally.launcher.data.version.VersionManifestRepository
 import java.util.concurrent.Executors
@@ -37,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var refreshButton: MaterialButton
     private lateinit var playButton: MaterialButton
+    private lateinit var installButton: MaterialButton
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
 
@@ -126,6 +128,14 @@ class MainActivity : AppCompatActivity() {
         actionRow.addView(refreshButton)
         actionRow.addView(playButton)
         versionContent.addView(actionRow)
+        addGap(versionContent, 8)
+        installButton = MaterialButton(this).apply {
+            text = "Download core files"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { downloadSelectedVersion() }
+        }
+        versionContent.addView(installButton)
         addGap(versionContent, 12)
         statusText = textView("Loading official version catalog…", 13f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant))
         versionContent.addView(statusText)
@@ -146,7 +156,7 @@ class MainActivity : AppCompatActivity() {
         page.addView(engineCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 1  ·  VERSION CATALOG", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        page.addView(textView("STAGE 2  ·  CORE FILE DOWNLOADER", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -190,6 +200,54 @@ class MainActivity : AppCompatActivity() {
         selectedVersionId = version.id
         versionInput.setText(version.displayLabel(), false)
         getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, version.id).apply()
+    }
+
+    private fun downloadSelectedVersion() {
+        if (!::versions.isInitialized) {
+            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        if (selected == null) {
+            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        installButton.isEnabled = false
+        refreshButton.isEnabled = false
+        playButton.isEnabled = false
+        installButton.text = "Downloading…"
+        statusText.text = "Preparing ${selected.id}…"
+        ioExecutor.execute {
+            val result = runCatching {
+                VersionInstaller(applicationContext).downloadCoreFiles(selected) { message ->
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed) statusText.text = message
+                    }
+                }
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                installButton.isEnabled = true
+                refreshButton.isEnabled = true
+                playButton.isEnabled = true
+                installButton.text = "Download core files"
+                result.onSuccess { installed ->
+                    statusText.text = "${installed.versionId} core files ready. Runtime, libraries and assets are still required to launch."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Core files downloaded")
+                        .setMessage("Saved metadata and client JAR for ${installed.versionId}. This is not a complete installation yet; the Java runtime, libraries, assets and renderer are not integrated.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }.onFailure { error ->
+                    statusText.text = "Download failed. Check your connection and retry."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Download failed")
+                        .setMessage(error.message ?: "Could not download Minecraft core files.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
     }
 
     private fun onPlayPressed() {
