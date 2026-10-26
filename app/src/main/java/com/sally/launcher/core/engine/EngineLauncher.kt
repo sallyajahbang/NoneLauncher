@@ -11,9 +11,9 @@ sealed class EngineLaunchResult {
     data class Failed(val explanation: String) : EngineLaunchResult()
 }
 
-/** Stage 1 intentionally does not bundle or launch a JVM/native renderer yet. */
+/** The runtime and game-file installers are separate from the not-yet-integrated JVM/native engine. */
 class EngineLauncherNotIntegrated : EngineLauncher {
     override fun launch(versionId: String): EngineLaunchResult = EngineLaunchResult.NotReady(
-        "Version $versionId is selected, but the Java runtime, game libraries, renderer bridge and input bridge have not been integrated in this stage."
+        "Minecraft $versionId is selected, but Sally's JVM/JNI launch bridge, Android-native renderer, and keyboard/mouse/touch input pipeline are not integrated yet. Installing a Java runtime alone cannot launch the game."
     )
 }

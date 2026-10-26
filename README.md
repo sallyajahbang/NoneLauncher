@@ -1,43 +1,34 @@
-# Sally Launcher — Stage 1
+# Sally Launcher — Stage 4
 
-A fresh Android launcher codebase informed by the architecture study of PojavLauncher. This is **not a rebranded PojavLauncher**: it has a new package, UI, app structure, version-catalog implementation and engine boundary. No PojavLauncher app classes or native renderer binaries are included in this stage.
+A new Android Minecraft: Java Edition launcher codebase informed by Pojav/Amethyst runtime architecture. This is not a rebranded PojavLauncher. Package name: `com.sally.launcher`.
 
-## What works in this stage
+## Included in this stage
 
-- Simple Material 3-style Android UI.
-- Loads Mojang's public `version_manifest_v2.json` over HTTPS.
-- Lists official release and snapshot versions from the manifest.
-- Remembers the selected version.
-- Caches the manifest and falls back to that saved copy when offline.
-- Defines an independent `EngineLauncher` interface so the UI is not coupled to JVM/native implementation details.
-- GitHub Actions builds a debug APK and uploads it as an artifact.
+- Material 3-style Android UI and official Mojang version catalog with offline cache.
+- Minecraft version file installer for the client JAR, common Java library artifacts and assets, with SHA-1 verification when supplied by official metadata.
+- Android Java runtime manager that reads the selected version's declared Java major, selects a runtime for the device ABI, obtains the upstream runtime asset digest, verifies SHA-256, and safely extracts the runtime into app-private storage.
+- Runtime archive extraction guards against path traversal, oversized archives and excessive entry counts.
+- GitHub Actions workflow that builds a debug APK and uploads `sally-launcher-debug-apk`.
 
-## What is not implemented yet
+## Important limitation
 
-This APK **does not launch Minecraft yet**. The Java runtime distribution/selection, game library and asset installer, JVM/JLI JNI bridge, graphics context/renderer bridge, and full keyboard/mouse/touch/gamepad event path have not been integrated. Pressing Play reports this status rather than pretending the game started.
+**This stage does not launch Minecraft yet.** Runtime files can be downloaded and installed, but the JVM/JNI invocation bridge, LWJGL/graphics context integration, native game libraries and keyboard/mouse/touch/gamepad input bridge are not integrated. The Play button deliberately reports this instead of pretending the game started. Java desktop `bin/java` cannot simply be spawned as an ordinary Android process; a compatible native bridge is required.
 
-The next build stage should add one verifiable layer at a time: (1) version detail + download manifest, (2) verified game libraries/assets and runtime manager, (3) JVM launch adapter, (4) rendering bridge, then (5) input/control mapping. Renderer/native components and any reused upstream code must be evaluated against their own licenses before redistribution.
+## Build
 
-## Build locally
-
-Requirements: JDK 17 and Android SDK platform 35/build-tools 35.0.0.
+Requirements: JDK 17, Android SDK platform 35 and build-tools 35.0.0.
 
 ```bash
+chmod +x ./gradlew
 ./gradlew :app:assembleDebug
 ```
 
-APK output:
+APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+GitHub Actions runs on pushes to `main`/`master`, pull requests and manual dispatch. Download the artifact named `sally-launcher-debug-apk` from the workflow run.
 
-## Build with GitHub Actions
+## Runtime source and licensing
 
-Push this project to GitHub. The workflow at `.github/workflows/build.yml` runs on pushes to `main`/`master`, pull requests, and manual dispatch. Open **Actions → Build Sally Launcher APK → run → Artifacts** and download `sally-launcher-debug-apk`.
+The Android OpenJDK runtime download format currently follows the public Amethyst Android runtime distribution. Runtime assets are not bundled into the APK. Runtime downloads must pass SHA-256 verification before extraction. Review upstream licensing and notices before redistribution: https://github.com/AngelAuraMC/angelauramc-openjdk-build and https://github.com/AngelAuraMC/Amethyst-Android.
 
-The supplied debug build uses the standard Android debug signing config. A future distributable release must use a private, stable keystore stored in GitHub Actions Secrets; never commit release keys to the repository.
-
-## Reference and licensing note
-
-PojavLauncher was used as a technical reference for architectural boundaries—Android UI/session orchestration, version/runtime management, JVM launch, graphics and input bridges. This stage is newly authored and does not include PojavLauncher application source or its native binaries. Refer to the upstream project and each dependency's own license before porting or distributing any components: https://github.com/PojavLauncherTeam/PojavLauncher
+The project is a fresh implementation; reusing any upstream native/Java components in later stages requires separate compatibility and license review.

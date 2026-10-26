@@ -24,6 +24,7 @@ import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
+import com.sally.launcher.data.runtime.RuntimeManager
 import com.sally.launcher.data.model.VersionCatalog
 import com.sally.launcher.data.version.VersionManifestRepository
 import java.util.concurrent.Executors
@@ -39,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var refreshButton: MaterialButton
     private lateinit var playButton: MaterialButton
     private lateinit var installButton: MaterialButton
+    private lateinit var runtimeButton: MaterialButton
+    private lateinit var runtimeStatusText: TextView
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
 
@@ -47,6 +50,7 @@ class MainActivity : AppCompatActivity() {
         repository = VersionManifestRepository(applicationContext)
         selectedVersionId = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
         setContentView(createContentView())
+        updateRuntimeStatus()
         loadVersionCatalog()
     }
 
@@ -146,17 +150,42 @@ class MainActivity : AppCompatActivity() {
         val engineContent = cardContent(engineCard)
         engineContent.addView(sectionLabel("ENGINE STATUS"))
         addGap(engineContent, 8)
-        engineContent.addView(textView("Runtime not connected yet", 19f, bold = true))
+        engineContent.addView(textView("Runtime manager · launch bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Version files and assets can be downloaded now. An Android-compatible Java runtime, native graphics/input bridge, and actual game launch pipeline still need integration.",
+            "Sally Launcher can install a verified Android Java runtime. The JVM/JNI launcher, Android-native graphics renderer, and keyboard/mouse/touch input bridge are still separate integration work, so Play will not start the game yet.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
         page.addView(engineCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 3  ·  VERSION FILES + ASSETS", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        val runtimeCard = card()
+        val runtimeContent = cardContent(runtimeCard)
+        runtimeContent.addView(sectionLabel("JAVA RUNTIME"))
+        addGap(runtimeContent, 8)
+        runtimeContent.addView(textView("Install a compatible runtime", 20f, bold = true))
+        addGap(runtimeContent, 6)
+        runtimeContent.addView(textView(
+            "Reads the selected Minecraft version's Java requirement, chooses an Android ABI-matched runtime, verifies its SHA-256 digest, and installs it in app-private storage.",
+            14f,
+            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
+        ))
+        addGap(runtimeContent, 14)
+        runtimeButton = MaterialButton(this).apply {
+            text = "Install compatible Java runtime"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { installRuntimeForSelectedVersion() }
+        }
+        runtimeContent.addView(runtimeButton)
+        addGap(runtimeContent, 10)
+        runtimeStatusText = textView("Checking installed runtimes…", 13f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant))
+        runtimeContent.addView(runtimeStatusText)
+        page.addView(runtimeCard, fullWidth())
+
+        addGap(page, 18)
+        page.addView(textView("STAGE 4  ·  ANDROID JAVA RUNTIME MANAGER", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -215,6 +244,7 @@ class MainActivity : AppCompatActivity() {
         installButton.isEnabled = false
         refreshButton.isEnabled = false
         playButton.isEnabled = false
+        runtimeButton.isEnabled = false
         installButton.text = "Installing…"
         statusText.text = "Preparing ${selected.id}…"
         ioExecutor.execute {
@@ -230,12 +260,13 @@ class MainActivity : AppCompatActivity() {
                 installButton.isEnabled = true
                 refreshButton.isEnabled = true
                 playButton.isEnabled = true
+                runtimeButton.isEnabled = true
                 installButton.text = "Install version files"
                 result.onSuccess { installed ->
-                    statusText.text = "${installed.versionId}: ${installed.libraryFiles} library files and ${installed.assetFiles} assets available. SHA-1 is checked when the official metadata provides it; Android runtime/renderer integration is still required."
+                    statusText.text = "${installed.versionId}: ${installed.libraryFiles} library files and ${installed.assetFiles} assets available. SHA-1 is checked when official metadata provides it; install a compatible Java runtime separately, and the game engine is still pending."
                     MaterialAlertDialogBuilder(this)
                         .setTitle("Version files installed")
-                        .setMessage("Downloaded the Minecraft client, common Java library artifacts, and asset objects for ${installed.versionId}. SHA-1 is checked wherever official metadata provides a hash. Bytes downloaded this run: ${installed.downloadedBytes / (1024 * 1024)} MB. Android-compatible Java runtime, native graphics/input bridge, and launch integration are still not included.")
+                        .setMessage("Downloaded the Minecraft client, common Java library artifacts, and asset objects for ${installed.versionId}. SHA-1 is checked wherever official metadata provides a hash. Bytes downloaded this run: ${installed.downloadedBytes / (1024 * 1024)} MB. A separate Android Java runtime installer is available below; the JVM/JNI launch bridge, renderer, and input integration are still pending.")
                         .setPositiveButton("OK", null)
                         .show()
                 }.onFailure { error ->
@@ -247,6 +278,71 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             }
+        }
+    }
+
+    private fun installRuntimeForSelectedVersion() {
+        if (!::versions.isInitialized) {
+            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        if (selected == null) {
+            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        runtimeButton.isEnabled = false
+        installButton.isEnabled = false
+        refreshButton.isEnabled = false
+        playButton.isEnabled = false
+        runtimeButton.text = "Installing runtime…"
+        runtimeStatusText.text = "Preparing a compatible Java runtime for ${selected.id}…"
+        ioExecutor.execute {
+            val result = runCatching {
+                RuntimeManager(applicationContext).installForVersion(selected) { message ->
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed) runtimeStatusText.text = message
+                    }
+                }
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                runtimeButton.isEnabled = true
+                installButton.isEnabled = true
+                refreshButton.isEnabled = true
+                playButton.isEnabled = true
+                runtimeButton.text = "Install compatible Java runtime"
+                updateRuntimeStatus()
+                result.onSuccess { installed ->
+                    runtimeStatusText.text = "${installed.displayName()} installed and verified. JVM/renderer bridge still pending."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Java runtime ready")
+                        .setMessage(
+                            "Java ${installed.majorVersion} for Android ${installed.architecture} was downloaded, SHA-256 verified, and unpacked to app-private storage for Minecraft ${selected.id}.\n\nThis does not launch the game yet: the JVM/JNI bridge, renderer, and input path still need integration."
+                        )
+                        .setPositiveButton("OK", null)
+                        .show()
+                }.onFailure { error ->
+                    runtimeStatusText.text = "Runtime installation failed. Check connection and free storage."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Runtime installation failed")
+                        .setMessage(error.message ?: "Could not install a compatible Java runtime.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun updateRuntimeStatus() {
+        if (!::runtimeStatusText.isInitialized) return
+        val runtimes = runCatching { RuntimeManager(applicationContext).installedRuntimes() }
+            .getOrDefault(emptyList())
+        runtimeStatusText.text = if (runtimes.isEmpty()) {
+            "No verified Java runtimes installed on this device."
+        } else {
+            "Installed: " + runtimes.joinToString(" · ") { it.displayName() }
         }
     }
 

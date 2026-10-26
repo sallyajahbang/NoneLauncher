@@ -42,7 +42,7 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Validate Gradle wrapper
+      - name: Verify Gradle wrapper
         run: ./gradlew --version
 
       - name: Build APK
