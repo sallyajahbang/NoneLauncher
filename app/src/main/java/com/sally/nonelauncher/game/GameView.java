@@ -153,7 +153,7 @@ public final class GameView extends View {
     }
 
     @Override
-    protected void onWindowFocusChanged(boolean hasWindowFocus) {
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
         if (!hasWindowFocus) {
             input.releaseAll();
