@@ -1,1 +1,10 @@
-<resources><style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:windowFullscreen">true</item><item name="android:colorAccent">#777777</item></style></resources>
+<resources>
+    <style name="Theme.SallyLauncher" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sally_primary</item>
+        <item name="colorSecondary">@color/sally_secondary</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

@@ -1,35 +1,24 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 android {
-    namespace 'com.sally.nonelauncher'
+    namespace 'com.sally.launcher'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.sally.nonelauncher'
-        minSdk 26
+        applicationId 'com.sally.launcher'
+        minSdk 24
         targetSdk 35
-        versionCode 2
-        versionName '0.2.0'
+        versionCode 1
+        versionName '0.1.0'
     }
 
     buildTypes {
-        debug {
-            minifyEnabled false
-        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    ndkVersion '27.2.12479018'
-
-    externalNativeBuild {
-        cmake {
-            path file('src/main/cpp/CMakeLists.txt')
-            version '3.22.1'
         }
     }
 
@@ -38,12 +27,13 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    packaging {
-        jniLibs.useLegacyPackaging = true
+    kotlinOptions {
+        jvmTarget = '17'
     }
 }
 
 dependencies {
-    implementation 'org.apache.commons:commons-compress:1.27.1'
-    implementation 'org.tukaani:xz:1.10'
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
 }

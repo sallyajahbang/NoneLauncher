@@ -1,2 +1,1 @@
-# JNI method names are resolved from native symbols. Keep the bridge intact.
--keep class com.sally.nonelauncher.input.NativeInput { *; }
+# Sally Launcher rules will be added as runtime/engine components are integrated.
