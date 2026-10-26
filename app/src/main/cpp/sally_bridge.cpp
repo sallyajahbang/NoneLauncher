@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -115,8 +116,8 @@ bool pathIsInside(const std::string& root, const std::string& path) {
 }
 
 struct DirectoryIdentity {
-    dev_t device;
-    ino_t inode;
+    std::uint64_t device;
+    std::uint64_t inode;
     bool operator<(const DirectoryIdentity& other) const {
         if (device != other.device) return device < other.device;
         return inode < other.inode;
@@ -135,7 +136,12 @@ bool findRuntimeFileRecursive(
 
     struct stat directoryStat {};
     if (stat(directory.c_str(), &directoryStat) != 0 || !S_ISDIR(directoryStat.st_mode)) return false;
-    const DirectoryIdentity identity{directoryStat.st_dev, directoryStat.st_ino};
+    // Android's stat typedefs differ across ABIs (notably armeabi-v7a).
+    // Normalize identity fields to a fixed-width unsigned type to avoid
+    // list-initialization narrowing errors on 32-bit NDK targets.
+    const DirectoryIdentity identity{
+        static_cast<std::uint64_t>(directoryStat.st_dev),
+        static_cast<std::uint64_t>(directoryStat.st_ino)};
     if (!visitedDirectories.insert(identity).second) return false;
 
     DIR* handle = opendir(directory.c_str());
