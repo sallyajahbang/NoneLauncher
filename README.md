@@ -9,7 +9,7 @@ Standalone Android launcher foundation built from scratch.
 
 ## Current stage
 
-The app currently contains a launcher screen and a full-screen native-input diagnostics screen. It is **not yet a Minecraft runtime** and does not currently download, install, or launch Minecraft.
+The app contains a launcher screen, native-input diagnostics, and a Java runtime archive manager. It is **not yet a Minecraft runtime** and does not currently download, install, or launch Minecraft.
 
 The input bridge is owned by NoneLauncher and is not copied from PojavLauncher. Android touch, multi-touch, mouse movement/buttons/relative motion, scroll, keyboard keys, printable character input, display resize, and pointer-grab state are delivered to a bounded native event queue. `NativeInput.drainEvents()` returns pending events in groups of six float values:
 
@@ -33,3 +33,10 @@ GitHub Actions installs Android API 35, Build Tools 35.0.0, CMake 3.22.1 and NDK
 4. Watch the recent-event list. The **DROPPED** counter should normally stay at `0`; it only increases if pending events exceed the 512-event queue capacity before they are drained.
 
 The diagnostic screen drains events for display. A future game-runtime adapter should become the consumer instead of the diagnostic view.
+
+
+## Java runtime manager (stage 2)
+
+The launcher can import a local Java runtime ZIP through Android's document picker, extract it into app-private storage (`files/runtimes`), and list archives that contain both `release` and `bin/java`. Imports are staged before registration and reject path traversal, archives with more than 30,000 entries, and expanded data over 1 GiB. The manager displays Java version and architecture metadata from the runtime's `release` file.
+
+This is runtime **catalog and import only**. It does not yet execute `bin/java`, set up Android native-library loading, download Minecraft manifests/assets/libraries, or launch a game. Runtime archives must be trusted and suitable for Android; a generic desktop JRE will not necessarily run on Android.

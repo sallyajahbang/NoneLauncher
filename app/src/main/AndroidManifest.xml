@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:theme="@style/AppTheme" android:label="NoneLauncher" android:allowBackup="false" android:supportsRtl="true">
+        <activity android:name=".runtime.RuntimeActivity" android:screenOrientation="unspecified" />
         <activity android:name=".game.GameActivity" android:screenOrientation="landscape" />
         <activity android:name=".LauncherActivity" android:screenOrientation="unspecified" android:exported="true">
             <intent-filter>
