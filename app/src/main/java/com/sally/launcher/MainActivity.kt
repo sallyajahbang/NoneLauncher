@@ -22,6 +22,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.sally.launcher.core.engine.EngineLaunchResult
 import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
+import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
@@ -42,6 +43,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var installButton: MaterialButton
     private lateinit var runtimeButton: MaterialButton
     private lateinit var runtimeStatusText: TextView
+    private lateinit var prepareLaunchButton: MaterialButton
+    private lateinit var engineStatusText: TextView
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
 
@@ -153,10 +156,25 @@ class MainActivity : AppCompatActivity() {
         engineContent.addView(textView("Runtime manager · launch bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Sally Launcher can install a verified Android Java runtime. The JVM/JNI launcher, Android-native graphics renderer, and keyboard/mouse/touch input bridge are still separate integration work, so Play will not start the game yet.",
+            "Sally can now resolve Mojang's JVM/game arguments and classpath for the selected version. This prepares a diagnostic launch profile only; the Android JVM/JNI bridge, native renderer, and input pipeline are not connected yet.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
+        addGap(engineContent, 12)
+        prepareLaunchButton = MaterialButton(this).apply {
+            text = "Prepare launch profile"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { prepareLaunchProfile() }
+        }
+        engineContent.addView(prepareLaunchButton)
+        addGap(engineContent, 8)
+        engineStatusText = textView(
+            "Profile not prepared. Install version files and a compatible Java runtime first.",
+            13f,
+            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
+        )
+        engineContent.addView(engineStatusText)
         page.addView(engineCard, fullWidth())
 
         addGap(page, 18)
@@ -185,7 +203,7 @@ class MainActivity : AppCompatActivity() {
         page.addView(runtimeCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 4  ·  ANDROID JAVA RUNTIME MANAGER", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        page.addView(textView("STAGE 5  ·  LAUNCH PROFILE RESOLVER", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -343,6 +361,63 @@ class MainActivity : AppCompatActivity() {
             "No verified Java runtimes installed on this device."
         } else {
             "Installed: " + runtimes.joinToString(" · ") { it.displayName() }
+        }
+    }
+
+    private fun prepareLaunchProfile() {
+        if (!::versions.isInitialized) {
+            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        if (selected == null) {
+            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        prepareLaunchButton.isEnabled = false
+        prepareLaunchButton.text = "Resolving profile…"
+        engineStatusText.text = "Reading version metadata, checking runtime and resolving libraries…"
+        installButton.isEnabled = false
+        runtimeButton.isEnabled = false
+        refreshButton.isEnabled = false
+        playButton.isEnabled = false
+        ioExecutor.execute {
+            val result = runCatching { LaunchProfileBuilder(applicationContext).prepare(selected) }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                prepareLaunchButton.isEnabled = true
+                prepareLaunchButton.text = "Prepare launch profile"
+                installButton.isEnabled = true
+                runtimeButton.isEnabled = true
+                refreshButton.isEnabled = true
+                playButton.isEnabled = true
+                result.onSuccess { profile ->
+                    engineStatusText.text = "Profile resolved: Java ${profile.runtimeMajor}, ${profile.classpathEntries.size} classpath entries, ${profile.jvmArguments.size} JVM args, ${profile.gameArguments.size} game args. Engine bridge still pending."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Launch profile prepared")
+                        .setMessage(
+                            "Minecraft ${profile.versionId}\n" +
+                                "Required Java: ${profile.requiredJavaMajor}\n" +
+                                "Selected runtime: Java ${profile.runtimeMajor}\n" +
+                                "Main class: ${profile.mainClass}\n" +
+                                "Classpath entries: ${profile.classpathEntries.size}\n" +
+                                "JVM arguments: ${profile.jvmArguments.size}\n" +
+                                "Game arguments: ${profile.gameArguments.size}\n" +
+                                "Assets index: ${profile.assetIndexId}\n\n" +
+                                "This validates and assembles launch data but does not start the game. The JVM/JNI bridge, Android native libraries, renderer and input integration are still required."
+                        )
+                        .setPositiveButton("OK", null)
+                        .show()
+                }.onFailure { error ->
+                    engineStatusText.text = "Profile check failed. Install version files/runtime, then retry."
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Cannot prepare launch profile")
+                        .setMessage(error.message ?: "The selected version is missing required launch files.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
         }
     }
 
