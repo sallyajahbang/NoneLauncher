@@ -49,9 +49,25 @@ class JliLaunchSpecBuilder(context: Context) {
 
         // Keep each argument as an individual string. Never join/split with a shell: paths and
         // values may contain spaces, and JLI_Launch expects argv-style values.
+        val appNativeDir = appContext.applicationInfo.nativeLibraryDir
+            .takeIf { it.isNotBlank() }
+            ?.let { File(it).canonicalFile }
+        val runtimeLibraryDirs = findSharedLibraryDirectories(File(runtimeHome, "lib"))
+        val gameNativeDirs = if (nativesDirectory.isDirectory && containsSharedLibrary(nativesDirectory)) {
+            listOf(nativesDirectory)
+        } else emptyList()
+        val allLibraryDirs = LinkedHashSet<File>().apply {
+            if (nativesDirectory.isDirectory) add(nativesDirectory)
+            if (appNativeDir?.isDirectory == true) add(appNativeDir)
+            addAll(runtimeLibraryDirs)
+            addAll(gameNativeDirs)
+        }.toList()
+
         val vmArguments = profile.jvmArguments.toMutableList()
         if (vmArguments.none { it.startsWith("-Djava.library.path=") }) {
-            vmArguments += "-Djava.library.path=${nativesDirectory.absolutePath}"
+            // Include the APK's nativeLibraryDir as well as runtime/game directories. Without
+            // this, Android-packaged LWJGL/GL4ES libraries cannot be found by System.loadLibrary.
+            vmArguments += "-Djava.library.path=${allLibraryDirs.joinToString(File.pathSeparator) { it.absolutePath }}"
         }
         if (vmArguments.none { it.startsWith("-Djava.io.tmpdir=") }) {
             vmArguments += "-Djava.io.tmpdir=${tempDirectory.absolutePath}"
@@ -71,19 +87,6 @@ class JliLaunchSpecBuilder(context: Context) {
             throw IOException("A native launch argument contains an invalid NUL character.")
         }
 
-        val appNativeDir = appContext.applicationInfo.nativeLibraryDir
-            .takeIf { it.isNotBlank() }
-            ?.let { File(it).canonicalFile }
-        val runtimeLibraryDirs = findSharedLibraryDirectories(File(runtimeHome, "lib"))
-        val gameNativeDirs = if (nativesDirectory.isDirectory && containsSharedLibrary(nativesDirectory)) {
-            listOf(nativesDirectory)
-        } else emptyList()
-        val allLibraryDirs = LinkedHashSet<File>().apply {
-            addAll(runtimeLibraryDirs)
-            if (appNativeDir?.isDirectory == true) add(appNativeDir)
-            addAll(gameNativeDirs)
-        }.toList()
-
         val env = linkedMapOf(
             "JAVA_HOME" to runtimeHome.absolutePath,
             "HOME" to appContext.filesDir.canonicalPath,
@@ -102,19 +105,15 @@ class JliLaunchSpecBuilder(context: Context) {
         }
         if (ldLibraryPath.isNotEmpty()) env["LD_LIBRARY_PATH"] = ldLibraryPath.joinToString(File.pathSeparator)
 
-        val blockers = mutableListOf<String>()
-        if (allLibraryDirs.none { File(it, "libjli.so").isFile }) {
-            blockers += "libjli.so was not found in the runtime library directories; run the JVM bridge probe."
-        }
-        if (allLibraryDirs.none { File(it, "libjvm.so").isFile }) {
-            blockers += "libjvm.so was not found in the runtime library directories; run the JVM bridge probe."
-        }
-        if (!containsSharedLibrary(nativesDirectory)) {
-            blockers += "Minecraft native libraries are not extracted. The current installer intentionally skips desktop native classifier JARs."
-        }
-        blockers += "Android-compatible LWJGL/GLFW and audio native libraries are not integrated."
-        blockers += "The GLES screen and input queue are diagnostics only; rendering and events are not wired to GLFW."
-        blockers += "This stage builds a JLI request only. It does not invoke JLI_Launch or start Minecraft."
+        val compatibility = EngineCompatibilityInspector.inspect(
+            runtimeHome = runtimeHome,
+            minecraftRoot = minecraftRoot,
+            appNativeLibraryDir = appNativeDir,
+        )
+        val blockers = compatibility.blockers.toMutableList()
+        blockers += "The GL surface lifecycle and native GLFW event callbacks are not yet connected to a live Minecraft render loop."
+        blockers += "A Microsoft-authenticated game session is not yet connected to the launch profile."
+        blockers += "This stage builds and validates a JLI request only; it does not invoke JLI_Launch or start Minecraft."
 
         return JliLaunchSpec(
             runtimeHome = runtimeHome,
