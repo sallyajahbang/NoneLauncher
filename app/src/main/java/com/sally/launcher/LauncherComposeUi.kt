@@ -361,7 +361,11 @@ private fun VersionsScreen(state: LauncherUiState, actions: LauncherActions, onO
     val header: @Composable () -> Unit = {
         ScreenHeader(
             title = "Versi",
-            subtitle = if (state.versions.isEmpty()) "Memuat daftar versi…" else "${state.versions.size} versi resmi",
+            subtitle = when {
+                state.busyAction != null -> state.catalogStatus
+                state.versions.isEmpty() -> "Memuat daftar versi…"
+                else -> "${state.versions.size} versi resmi"
+            },
             onOpenAccount = onOpenAccount,
             trailing = {
                 IconButton(onClick = actions.refreshCatalog, enabled = !state.refreshing) {
@@ -466,7 +470,10 @@ private fun VersionActionDialog(version: MinecraftVersion, state: LauncherUiStat
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 StatusPill(if (installed) "Terpasang" else "Belum terpasang", installed)
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (busy) {
+                    Text(state.catalogStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
                 if (installed) {
                     Button(
                         onClick = { onDismiss(); actions.selectVersion(version.id) },
@@ -483,7 +490,7 @@ private fun VersionActionDialog(version: MinecraftVersion, state: LauncherUiStat
                         onClick = { onDismiss(); actions.installVersion(version.id) },
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (busy) "Memasang…" else "Pasang") }
+                    ) { Text(if (busy) "Sedang dipasang…" else "Pasang") }
                 }
             }
         },
@@ -555,7 +562,10 @@ private fun VersionDetailCard(version: MinecraftVersion?, state: LauncherUiState
                 Text(versionFilterLabel(version.type), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Dirilis: ${version.releaseTime.take(10).ifBlank { "-" }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 StatusPill(if (installed) "Terpasang" else "Belum terpasang", installed)
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (busy) {
+                    Text(state.catalogStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
                 Spacer(Modifier.weight(1f))
                 if (installed) {
                     Button(onClick = { actions.selectVersion(version.id) }, enabled = !busy && !inUse, modifier = Modifier.fillMaxWidth()) {
@@ -570,7 +580,7 @@ private fun VersionDetailCard(version: MinecraftVersion?, state: LauncherUiState
                     Button(onClick = { actions.installVersion(version.id) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Download, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (busy) "Memasang…" else "Pasang")
+                        Text(if (busy) "Sedang dipasang…" else "Pasang")
                     }
                 }
             }
