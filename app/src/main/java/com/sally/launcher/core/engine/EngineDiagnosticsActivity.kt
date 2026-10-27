@@ -25,6 +25,8 @@ import kotlin.math.max
 class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var glView: GLSurfaceView
     private lateinit var infoView: TextView
+    private val inputTranslator = AndroidInputTranslator()
+    private val activeTouchPointers = LinkedHashSet<Int>()
 
     @Volatile private var pointerX = 0f
     @Volatile private var pointerY = 0f
@@ -82,8 +84,14 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onPause() {
+        releaseTrackedInput()
         if (::glView.isInitialized) glView.onPause()
         super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) releaseTrackedInput()
     }
 
     override fun onDestroy() {
@@ -100,17 +108,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
             event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             event.keyCode == KeyEvent.KEYCODE_POWER
-        if (!systemKey && (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_UP)) {
-            val accepted = NativeEngineBridge.sendInput(
-                NativeEngineBridge.EVENT_KEY,
-                event.keyCode,
-                if (event.action == KeyEvent.ACTION_DOWN) 1 else 0,
-                0f,
-                0f,
-                event.repeatCount.toFloat(),
-            )
-            if (accepted) return true
-        }
+        if (!systemKey && inputTranslator.sendKey(event)) return true
         return super.dispatchKeyEvent(event)
     }
 
@@ -120,25 +118,72 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun handleTouch(event: MotionEvent): Boolean {
         val action = event.actionMasked
-        for (index in 0 until event.pointerCount) {
-            val x = event.getX(index)
-            val y = event.getY(index)
-            pointerX = x / max(1, glView.width).toFloat()
-            pointerY = y / max(1, glView.height).toFloat()
-            hasPointer = true
-            NativeEngineBridge.sendInput(
-                NativeEngineBridge.EVENT_TOUCH,
-                event.getPointerId(index),
-                action,
-                x,
-                y,
-                event.getPressure(index),
-            )
+        when (action) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val index = event.actionIndex
+                sendTouch(event, index, GlfwInputMapping.PRESS)
+                activeTouchPointers.add(event.getPointerId(index))
+            }
+            MotionEvent.ACTION_MOVE -> {
+                for (index in 0 until event.pointerCount) {
+                    sendTouch(event, index, GlfwInputMapping.MOVE)
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                val index = event.actionIndex
+                sendTouch(event, index, GlfwInputMapping.RELEASE)
+                activeTouchPointers.remove(event.getPointerId(index))
+            }
+            MotionEvent.ACTION_CANCEL -> releaseTouchPointers()
         }
         return true
     }
 
+    private fun sendTouch(event: MotionEvent, index: Int, action: Int) {
+        if (index !in 0 until event.pointerCount) return
+        val x = event.getX(index)
+        val y = event.getY(index)
+        pointerX = x / max(1, glView.width).toFloat()
+        pointerY = y / max(1, glView.height).toFloat()
+        hasPointer = true
+        NativeEngineBridge.sendInput(
+            NativeEngineBridge.EVENT_TOUCH,
+            event.getPointerId(index),
+            action,
+            x,
+            y,
+            event.getPressure(index),
+        )
+    }
+
+    private fun releaseTouchPointers() {
+        activeTouchPointers.toList().forEach { pointerId ->
+            NativeEngineBridge.sendInput(
+                NativeEngineBridge.EVENT_TOUCH, pointerId, GlfwInputMapping.RELEASE,
+                pointerX * max(1, glView.width), pointerY * max(1, glView.height), 0f,
+            )
+        }
+        activeTouchPointers.clear()
+    }
+
+    private fun releaseTrackedInput() {
+        inputTranslator.releaseAll()
+        releaseTouchPointers()
+    }
+
     private fun handleGenericMotion(event: MotionEvent): Boolean {
+        val isJoystick = event.isFromSource(InputDevice.SOURCE_JOYSTICK) &&
+            event.actionMasked == MotionEvent.ACTION_MOVE
+        if (isJoystick) {
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_X, event.getAxisValue(MotionEvent.AXIS_X))
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_Y, event.getAxisValue(MotionEvent.AXIS_Y))
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_RX, event.getAxisValue(MotionEvent.AXIS_RX))
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_RY, event.getAxisValue(MotionEvent.AXIS_RY))
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_LTRIGGER, event.getAxisValue(MotionEvent.AXIS_LTRIGGER))
+            inputTranslator.sendGamepadAxis(MotionEvent.AXIS_RTRIGGER, event.getAxisValue(MotionEvent.AXIS_RTRIGGER))
+            return true
+        }
+
         val isMouse = event.isFromSource(InputDevice.SOURCE_MOUSE) ||
             event.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE)
         if (!isMouse) return false
@@ -149,7 +194,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 pointerY = event.y / max(1, glView.height).toFloat()
                 hasPointer = true
                 NativeEngineBridge.sendInput(
-                    NativeEngineBridge.EVENT_POINTER_MOVE, 0, event.actionMasked, event.x, event.y, 0f,
+                    NativeEngineBridge.EVENT_POINTER_MOVE, 0, GlfwInputMapping.MOVE, event.x, event.y, 0f,
                 )
                 return true
             }
@@ -157,7 +202,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 NativeEngineBridge.sendInput(
                     NativeEngineBridge.EVENT_SCROLL,
                     0,
-                    event.actionMasked,
+                    GlfwInputMapping.PRESS,
                     event.getAxisValue(MotionEvent.AXIS_HSCROLL),
                     event.getAxisValue(MotionEvent.AXIS_VSCROLL),
                     0f,
@@ -165,15 +210,13 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 return true
             }
             MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
-                NativeEngineBridge.sendInput(
-                    NativeEngineBridge.EVENT_MOUSE_BUTTON,
+                val accepted = inputTranslator.sendMouseButton(
                     event.actionButton,
-                    if (event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS) 1 else 0,
+                    event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS,
                     event.x,
                     event.y,
-                    0f,
                 )
-                return true
+                return accepted
             }
         }
         return false
@@ -278,7 +321,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         append(if (NativeEngineBridge.isAvailable) NativeEngineBridge.bridgeVersion() else "Native bridge failed to load")
         append("\nOpenGL ES 2.0 surface active when rendered\n")
         append("Touch the canvas, move a mouse, or press a physical key.\n")
-        append("This test queue is not connected to GLFW/Minecraft yet.")
+        append("Input is GLFW-normalized, but callbacks are not connected to Minecraft yet.")
     }
 
     private fun statusWithEvents(): String = initialStatus() +

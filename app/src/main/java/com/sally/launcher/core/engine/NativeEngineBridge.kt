@@ -11,6 +11,8 @@ object NativeEngineBridge {
     const val EVENT_MOUSE_BUTTON = 4
     const val EVENT_SCROLL = 5
     const val EVENT_VIEWPORT = 6
+    const val EVENT_GAMEPAD_AXIS = 7
+    const val EVENT_GAMEPAD_BUTTON = 8
 
     val isAvailable: Boolean by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         try {
