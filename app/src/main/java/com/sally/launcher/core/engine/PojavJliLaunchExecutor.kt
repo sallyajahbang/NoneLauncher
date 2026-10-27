@@ -7,6 +7,7 @@ import com.oracle.dalvik.VMLauncher
 import net.kdt.pojavlaunch.utils.JREUtils
 import java.io.File
 import java.io.IOException
+import java.util.LinkedHashSet
 
 /**
  * Executes the prepared launch inside the Android process using the upstream Pojav JNI/JLI entry.
@@ -74,8 +75,20 @@ class PojavJliLaunchExecutor(context: Context) {
                 throw IOException("Could not configure the runtime environment variable $name.", error)
             }
         }
-        val linkerPath = spec.environment["LD_LIBRARY_PATH"]
+        val environmentLibraryPath = spec.environment["LD_LIBRARY_PATH"]
             ?: throw IOException("The launch request does not define LD_LIBRARY_PATH.")
+        // Upstream Pojav separates the process LD_LIBRARY_PATH from Android's internal linker
+        // namespace. Putting libjvm.so's own directory in the environment makes OpenJDK JLI
+        // re-exec bin/java, which is denied for this embedded, app-private runtime.
+        val jvmDirectory = RuntimeLibraryDirectories.discover(File(spec.runtimeHome, "lib"))
+            .firstOrNull { File(it, "libjvm.so").isFile }
+            ?: throw IOException("Could not locate the selected runtime's libjvm.so directory.")
+        val linkerDirectories = LinkedHashSet<String>().apply {
+            add(jvmDirectory.absolutePath)
+            addAll(spec.nativeLibraryDirectories.map { it.absolutePath })
+            addAll(environmentLibraryPath.split(File.pathSeparator).filter { it.isNotBlank() })
+        }
+        val linkerPath = linkerDirectories.joinToString(File.pathSeparator)
         try {
             JREUtils.setLdLibraryPath(linkerPath)
         } catch (error: Throwable) {

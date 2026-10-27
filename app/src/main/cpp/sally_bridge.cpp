@@ -341,11 +341,10 @@ void collectRuntimeLibraryDirectories(
     closedir(handle);
     if (hasSharedObject) {
         found.insert(canonical);
-        // Include the parent library root too. The Java 8 Android runtime stores
-        // libjli.so under lib/<arch>/jli and libjvm.so under lib/<arch>/server,
-        // while JLI's launch/re-exec logic expects lib/<arch> in LD_LIBRARY_PATH.
-        // If it is missing, JLI tries execve(runtimeHome/bin/java), which fails
-        // under Android app-private storage and reports "Permission denied".
+        // Include the parent in the full Android internal linker path so sibling runtime
+        // libraries can resolve. Do NOT pass this full list as the process LD_LIBRARY_PATH:
+        // OpenJDK JLI treats a direct libjvm.so directory there as a reason to re-exec
+        // runtimeHome/bin/java, which fails for the embedded runtime on Android.
         const std::size_t slash = canonical.find_last_of('/');
         if (slash != std::string::npos && slash > 0) {
             const std::string parent = canonical.substr(0, slash);
@@ -365,6 +364,13 @@ void addPathOnce(std::vector<std::string>& paths, const std::string& path) {
     if (std::find(paths.begin(), paths.end(), path) == paths.end()) paths.push_back(path);
 }
 
+bool hasDirectLibJvm(const std::string& directory) {
+    if (directory.empty()) return false;
+    struct stat itemStat {};
+    const std::string candidate = directory + "/libjvm.so";
+    return stat(candidate.c_str(), &itemStat) == 0 && S_ISREG(itemStat.st_mode);
+}
+
 void updateAndroidLoaderPath(const std::string& libraryPath) {
     using UpdatePathFunction = void (*)(char*);
     void* dlHandle = dlopen("libdl.so", RTLD_NOW | RTLD_GLOBAL);
@@ -380,12 +386,16 @@ void updateAndroidLoaderPath(const std::string& libraryPath) {
 
 class ScopedEnvironment {
 public:
-    ScopedEnvironment(const std::string& home, const std::string& libraryPath, const std::string& path)
+    ScopedEnvironment(const std::string& home, const std::string& environmentLibraryPath,
+                      const std::string& linkerLibraryPath, const std::string& path)
         : oldJavaHome(read("JAVA_HOME")), oldLdLibraryPath(read("LD_LIBRARY_PATH")), oldPath(read("PATH")) {
         setenv("JAVA_HOME", home.c_str(), 1);
-        setenv("LD_LIBRARY_PATH", libraryPath.c_str(), 1);
+        // Keep lib/server (the directory containing libjvm.so) out of the process environment.
+        // OpenJDK JLI sees it in LD_LIBRARY_PATH and tries to re-exec bin/java, which Android
+        // rejects for embedded app-private runtimes. The Android linker receives it separately.
+        setenv("LD_LIBRARY_PATH", environmentLibraryPath.c_str(), 1);
         setenv("PATH", path.c_str(), 1);
-        updateAndroidLoaderPath(libraryPath);
+        updateAndroidLoaderPath(linkerLibraryPath);
     }
 
     ~ScopedEnvironment() {
@@ -507,32 +517,65 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
         return makeSmokeResponse(env, "ERROR", "libjvm.so was not found inside the selected runtime.");
     }
 
+    // Full path for Android's internal linker namespace. It intentionally includes the
+    // directory holding libjvm.so, which is needed for dlopen/dependency resolution.
     std::set<std::string> directorySet;
     std::size_t visited = 0;
     collectRuntimeLibraryDirectories(home, home, 0, visited, directorySet);
-    std::vector<std::string> libraryDirs(directorySet.begin(), directorySet.end());
-    addPathOnce(libraryDirs, jliPath.substr(0, jliPath.find_last_of('/')));
-    addPathOnce(libraryDirs, jvmPath.substr(0, jvmPath.find_last_of('/')));
+    std::vector<std::string> linkerDirs;
+    addPathOnce(linkerDirs, jvmPath.substr(0, jvmPath.find_last_of('/')));
+    for (const auto& item : directorySet) addPathOnce(linkerDirs, item);
+    addPathOnce(linkerDirs, jliPath.substr(0, jliPath.find_last_of('/')));
+
+    // OpenJDK's JLI must see the JLI directory and its parent (lib/aarch64 on Java 8,
+    // lib/ on Java 17), but NOT lib/aarch64/server or lib/server. If LD_LIBRARY_PATH
+    // directly contains libjvm.so, the desktop launcher tries execve($JAVA_HOME/bin/java).
+    std::vector<std::string> environmentDirs;
+    const std::string jliDirectory = jliPath.substr(0, jliPath.find_last_of('/'));
+    addPathOnce(environmentDirs, jliDirectory);
+    const std::size_t jliSlash = jliDirectory.find_last_of('/');
+    if (jliSlash != std::string::npos) addPathOnce(environmentDirs, jliDirectory.substr(0, jliSlash));
+    if (sizeof(void*) == 8) {
+        addPathOnce(environmentDirs, "/system/lib64");
+        addPathOnce(environmentDirs, "/vendor/lib64");
+        addPathOnce(environmentDirs, "/vendor/lib64/hw");
+    } else {
+        addPathOnce(environmentDirs, "/system/lib");
+        addPathOnce(environmentDirs, "/vendor/lib");
+        addPathOnce(environmentDirs, "/vendor/lib/hw");
+    }
+
     const char* existingLdPath = std::getenv("LD_LIBRARY_PATH");
     if (existingLdPath != nullptr) {
         std::string existing(existingLdPath);
         std::size_t start = 0;
         while (start <= existing.size()) {
             const std::size_t end = existing.find(':', start);
-            addPathOnce(libraryDirs, existing.substr(start, end == std::string::npos ? std::string::npos : end - start));
+            const std::string item = existing.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            if (!item.empty()) {
+                addPathOnce(linkerDirs, item);
+                // Never preserve an inherited path which directly names a JVM server/client dir.
+                if (!hasDirectLibJvm(item)) addPathOnce(environmentDirs, item);
+            }
             if (end == std::string::npos) break;
             start = end + 1;
         }
     }
-    std::string ldLibraryPath;
-    for (const auto& item : libraryDirs) {
-        if (!ldLibraryPath.empty()) ldLibraryPath += ':';
-        ldLibraryPath += item;
+    std::string environmentLibraryPath;
+    for (const auto& item : environmentDirs) {
+        if (hasDirectLibJvm(item)) continue;
+        if (!environmentLibraryPath.empty()) environmentLibraryPath += ':';
+        environmentLibraryPath += item;
+    }
+    std::string linkerLibraryPath;
+    for (const auto& item : linkerDirs) {
+        if (!linkerLibraryPath.empty()) linkerLibraryPath += ':';
+        linkerLibraryPath += item;
     }
     const std::string pathValue = home + "/bin:" + (std::getenv("PATH") ? std::getenv("PATH") : "");
     // Environment and Android linker search-path changes are process-global. Restore them on
     // every return path so the diagnostic cannot leak the selected JRE into other app code.
-    ScopedEnvironment scopedEnvironment(home, ldLibraryPath, pathValue);
+    ScopedEnvironment scopedEnvironment(home, environmentLibraryPath, linkerLibraryPath, pathValue);
 
     dlerror();
     if (gJliHandle == nullptr) gJliHandle = dlopen(jliPath.c_str(), RTLD_NOW | RTLD_GLOBAL);

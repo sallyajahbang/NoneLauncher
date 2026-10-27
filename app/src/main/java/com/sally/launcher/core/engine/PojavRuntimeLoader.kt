@@ -7,8 +7,9 @@ import java.io.IOException
 
 /**
  * Port of upstream Pojav's JREUtils.loadGraphicsLibrary() + initJavaRuntime(): map the renderer and the
- * JRE's native libraries RTLD_GLOBAL before JLI_Launch. Call on the launch worker thread after
- * JREUtils.setLdLibraryPath(), so bare library names resolve through the runtime linker path.
+ * JRE's native libraries RTLD_GLOBAL before JLI_Launch. The argument is Android's internal
+ * linker search path (which may include lib/server); it is deliberately NOT the process
+ * LD_LIBRARY_PATH environment value consumed by OpenJDK JLI.
  */
 object PojavRuntimeLoader {
     private const val TAG = "SallyRuntimeLoader"

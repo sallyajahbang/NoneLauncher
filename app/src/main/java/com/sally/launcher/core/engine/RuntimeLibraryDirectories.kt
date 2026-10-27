@@ -3,7 +3,7 @@ package com.sally.launcher.core.engine
 import java.io.File
 import java.util.LinkedHashSet
 
-/** Finds JRE library directories and their immediate parents for OpenJDK JLI compatibility. */
+/** Discovers JRE library directories for Android linker setup and safe JLI environment construction. */
 internal object RuntimeLibraryDirectories {
     private const val MAX_SCANNED_ENTRIES = 5_000
 
@@ -31,9 +31,10 @@ internal object RuntimeLibraryDirectories {
 
         visit(rootCanonical, 0)
 
-        // JRE 8 on Android uses lib/<arch>/{jli,server}; its launcher expects lib/<arch>
-        // in LD_LIBRARY_PATH even if that parent contains no .so directly. JDK 17 generally
-        // uses lib/{jli,server}, so the same rule adds lib/ as the required parent.
+        // Build the full Android internal linker search path. Java 8 on Android uses
+        // lib/<arch>/{jli,server}; Java 17 generally uses lib/{jli,server}. Parent directories
+        // are useful for resolving sibling dependencies, but this full list must never be
+        // copied wholesale into the process LD_LIBRARY_PATH passed to OpenJDK JLI.
         val withRequiredParents = LinkedHashSet<File>()
         for (directory in found) {
             withRequiredParents += directory
@@ -45,5 +46,22 @@ internal object RuntimeLibraryDirectories {
             }
         }
         return withRequiredParents.toList().sortedBy { it.absolutePath }
+    }
+
+    /**
+     * LD_LIBRARY_PATH must not contain the directory that directly contains libjvm.so.
+     * OpenJDK 8/17 JLI treats that as a signal to re-exec $JAVA_HOME/bin/java to refresh
+     * the environment. That exec is not usable for an embedded JVM in Android app storage.
+     * Upstream Pojav keeps the JLI directory and its architecture/lib parent in the process
+     * environment, and adds the server/client directory only to Android's internal linker path.
+     */
+    fun discoverEnvironmentDirectories(root: File): List<File> {
+        val libraryDirectories = discover(root)
+        val jliDirectory = libraryDirectories.firstOrNull { File(it, "libjli.so").isFile }
+            ?: return emptyList()
+        val candidates = LinkedHashSet<File>()
+        candidates += jliDirectory.canonicalFile
+        jliDirectory.parentFile?.let { candidates += it.canonicalFile }
+        return candidates.filterNot { File(it, "libjvm.so").isFile }
     }
 }

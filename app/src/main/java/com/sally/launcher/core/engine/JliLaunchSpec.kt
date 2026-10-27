@@ -124,15 +124,23 @@ class JliLaunchSpecBuilder(context: Context) {
             "AWTSTUB_WIDTH" to displayWidth.toString(),
             "AWTSTUB_HEIGHT" to displayHeight.toString(),
         )
-        val ldLibraryPath = LinkedHashSet<String>().apply {
-            addAll(allLibraryDirs.map { it.absolutePath })
+        // Do not put <runtime>/lib/<arch>/server (or lib/server) in the process environment.
+        // OpenJDK JLI detects libjvm.so in LD_LIBRARY_PATH and re-execs bin/java to refresh it;
+        // that exec fails with EACCES on many Android app-private runtime layouts. The JVM
+        // directory is added separately to Android's internal linker namespace by the executor.
+        val environmentLibraryDirs = LinkedHashSet<String>().apply {
+            addAll(RuntimeLibraryDirectories.discoverEnvironmentDirectories(File(runtimeHome, "lib")).map { it.absolutePath })
+            if (nativesDirectory.isDirectory) add(nativesDirectory.absolutePath)
+            if (appNativeDir?.isDirectory == true) add(appNativeDir.absolutePath)
             addAll(systemLibraryDirectories())
             System.getenv("LD_LIBRARY_PATH")
                 ?.split(File.pathSeparator)
-                ?.filter { it.isNotBlank() }
+                ?.filter { it.isNotBlank() && !File(it, "libjvm.so").isFile }
                 ?.let(::addAll)
         }
-        if (ldLibraryPath.isNotEmpty()) env["LD_LIBRARY_PATH"] = ldLibraryPath.joinToString(File.pathSeparator)
+        if (environmentLibraryDirs.isNotEmpty()) {
+            env["LD_LIBRARY_PATH"] = environmentLibraryDirs.joinToString(File.pathSeparator)
+        }
 
         val compatibility = EngineCompatibilityInspector.inspect(
             runtimeHome = runtimeHome,
