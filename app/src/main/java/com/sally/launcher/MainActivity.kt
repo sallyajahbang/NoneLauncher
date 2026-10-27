@@ -1,6 +1,10 @@
 package com.sally.launcher
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -49,7 +53,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prepareLaunchButton: MaterialButton
     private lateinit var engineDiagnosticsButton: MaterialButton
     private lateinit var jvmBridgeButton: MaterialButton
+    private lateinit var jvmSmokeButton: MaterialButton
     private lateinit var engineStatusText: TextView
+    private var jvmSmokeReceiver: BroadcastReceiver? = null
+    private var jvmSmokeTimeout: Runnable? = null
     private lateinit var versions: List<MinecraftVersion>
     private var selectedVersionId: String = ""
 
@@ -63,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        clearJliSmokeReceiver()
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -158,10 +166,10 @@ class MainActivity : AppCompatActivity() {
         val engineContent = cardContent(engineCard)
         engineContent.addView(sectionLabel("ENGINE STATUS"))
         addGap(engineContent, 8)
-        engineContent.addView(textView("JVM loader probe · game bridge pending", 19f, bold = true))
+        engineContent.addView(textView("JVM startup diagnostics · game bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Sally can now inspect whether the installed Android Java runtime exposes a loadable libjli.so, libjvm.so, and JLI_Launch entry point. This is a loader diagnostic only: it does not start a JVM, and game rendering/input are not connected to LWJGL/GLFW yet.",
+            "Probe the runtime's native launcher, then optionally run a real Java -version startup test. Neither action launches Minecraft; Android LWJGL/GLFW, rendering, and game input are still being integrated.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
@@ -181,6 +189,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { probeJvmBridge() }
         }
         engineContent.addView(jvmBridgeButton)
+        addGap(engineContent, 8)
+        jvmSmokeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Run Java runtime self-test"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { runJliRuntimeSmokeTest() }
+        }
+        engineContent.addView(jvmSmokeButton)
         addGap(engineContent, 8)
         engineDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "Test graphics & input bridge"
@@ -226,7 +242,7 @@ class MainActivity : AppCompatActivity() {
         page.addView(runtimeCard, fullWidth())
 
         addGap(page, 18)
-        page.addView(textView("STAGE 7  ·  JVM JLI LOADER PROBE", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
+        page.addView(textView("STAGE 9  ·  JVM STARTUP SELF-TEST", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
         return scroll
     }
 
@@ -495,6 +511,99 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun runJliRuntimeSmokeTest() {
+        if (!::jvmSmokeButton.isInitialized) return
+        if (jvmSmokeReceiver != null) return
+        jvmSmokeButton.isEnabled = false
+        jvmSmokeButton.text = "Starting isolated JVM test…"
+        engineStatusText.text = "Starting a disposable process for Java -version…"
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != JliRuntimeSmokeService.ACTION_RESULT) return
+                clearJliSmokeReceiver()
+                jvmSmokeButton.isEnabled = true
+                jvmSmokeButton.text = "Run Java runtime self-test"
+                val passed = intent.getBooleanExtra(JliRuntimeSmokeService.EXTRA_PASSED, false)
+                val runtime = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME).orEmpty()
+                val runtimeHome = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME_HOME).orEmpty()
+                val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
+                val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
+                engineStatusText.text = if (passed) {
+                    "JVM startup test passed for $runtime. Minecraft launch remains blocked until Android LWJGL/GLFW, natives, renderer, and input integration are complete."
+                } else {
+                    "JVM startup test failed or is unavailable for $runtime. See the diagnostic log for details."
+                }
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(if (passed) "Java runtime test passed" else "Java runtime test failed")
+                    .setMessage(
+                        "Runtime: $runtime\n" +
+                            (if (runtimeHome.isBlank()) "" else "Path: $runtimeHome\n") +
+                            "\n$details\n\nSaved diagnostic log: $logPath\n\n" +
+                            "The test runs `JLI_Launch` with only `-version` in a disposable Android process. It does not start Minecraft."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+        jvmSmokeReceiver = receiver
+        val filter = IntentFilter(JliRuntimeSmokeService.ACTION_RESULT)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(receiver, filter)
+            }
+        } catch (error: Exception) {
+            clearJliSmokeReceiver()
+            jvmSmokeButton.isEnabled = true
+            jvmSmokeButton.text = "Run Java runtime self-test"
+            engineStatusText.text = "Could not listen for the isolated JVM diagnostic result."
+            Toast.makeText(this, error.message ?: "Could not register JVM test receiver", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val timeout = Runnable {
+            clearJliSmokeReceiver()
+            jvmSmokeButton.isEnabled = true
+            jvmSmokeButton.text = "Run Java runtime self-test"
+            engineStatusText.text = "JVM test process did not return a result. It may have crashed during JVM initialization."
+            MaterialAlertDialogBuilder(this)
+                .setTitle("JVM test timed out")
+                .setMessage(
+                    "The separate JVM diagnostic process did not report a result within 45 seconds. " +
+                        "Sally's main UI process is isolated from that native test. Check Android logcat and the app-private diagnostics folder."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+        }
+        jvmSmokeTimeout = timeout
+        mainHandler.postDelayed(timeout, 45_000L)
+        try {
+            startService(Intent(this, JliRuntimeSmokeService::class.java))
+        } catch (error: Exception) {
+            clearJliSmokeReceiver()
+            jvmSmokeButton.isEnabled = true
+            jvmSmokeButton.text = "Run Java runtime self-test"
+            engineStatusText.text = "Could not start the isolated JVM diagnostic process."
+            MaterialAlertDialogBuilder(this)
+                .setTitle("JVM test unavailable")
+                .setMessage(error.message ?: "Could not start the diagnostic service.")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun clearJliSmokeReceiver() {
+        jvmSmokeTimeout?.let(mainHandler::removeCallbacks)
+        jvmSmokeTimeout = null
+        jvmSmokeReceiver?.let { receiver ->
+            runCatching { unregisterReceiver(receiver) }
+        }
+        jvmSmokeReceiver = null
     }
 
     private fun onPlayPressed() {

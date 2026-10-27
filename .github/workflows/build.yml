@@ -39,7 +39,7 @@ jobs:
             echo "Android SDK was not found at $ANDROID_SDK_ROOT" >&2
             exit 1
           }
-          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -mindepth 3 -maxdepth 3 -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print 2>/dev/null | sort -V | tail -n 1)"
           if [[ -z "$SDKMANAGER" ]]; then
             echo "sdkmanager was not found under $ANDROID_SDK_ROOT/cmdline-tools" >&2
             exit 1
@@ -50,6 +50,8 @@ jobs:
           set +o pipefail
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null
           set -o pipefail
+          # Older SDK setup actions try to request a retired legacy package on current SDKs.
+          # Install only supported package IDs explicitly.
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-35" \

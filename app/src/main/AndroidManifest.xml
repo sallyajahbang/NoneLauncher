@@ -9,6 +9,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SallyLauncher"
         android:usesCleartextTraffic="false">
+        <service
+            android:name=".core.engine.JliRuntimeSmokeService"
+            android:exported="false"
+            android:process=":jli_smoke" />
         <activity
             android:name=".core.engine.EngineDiagnosticsActivity"
             android:exported="false"
