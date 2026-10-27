@@ -2,49 +2,29 @@ package com.sally.launcher
 
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.res.Configuration
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.InputFilter
-import android.text.InputType
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.BaseAdapter
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ListPopupWindow
-import android.widget.PopupMenu
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
+import androidx.core.view.WindowInsetsControllerCompat
+import com.sally.launcher.core.auth.LocalAccountActivity
 import com.sally.launcher.core.auth.LocalAccountRepository
 import com.sally.launcher.core.auth.MicrosoftLoginActivity
 import com.sally.launcher.core.engine.EngineDiagnosticsActivity
+import com.sally.launcher.core.engine.JliBridgeDiagnostics
+import com.sally.launcher.core.engine.JliLaunchSpecBuilder
 import com.sally.launcher.core.engine.JliRuntimeSmokeService
+import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
-import com.sally.launcher.core.engine.OfflineAccountProfile
 import com.sally.launcher.core.engine.PojavEngineDiagnosticsActivity
 import com.sally.launcher.core.engine.PojavEnginePayloadInstaller
 import com.sally.launcher.core.engine.PojavGameActivity
@@ -54,709 +34,656 @@ import com.sally.launcher.data.model.VersionCatalog
 import com.sally.launcher.data.runtime.RuntimeManager
 import com.sally.launcher.data.storage.LauncherStorage
 import com.sally.launcher.data.version.VersionManifestRepository
-import com.sally.launcher.ui.CosmicBackgroundView
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import androidx.compose.runtime.mutableStateOf
 
-/**
- * Single-screen Home: pick an account and a version from two dropdowns, press Play.
- * Play downloads whatever is missing (version files + Java runtime) and then starts the game.
- */
 class MainActivity : AppCompatActivity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var repository: VersionManifestRepository
+    private val uiState = mutableStateOf(LauncherUiState())
+    private var catalogVersions: List<MinecraftVersion> = emptyList()
+    private var latestReleaseId: String? = null
+    private var latestSnapshotId: String? = null
+    private var jvmSmokeReceiver: BroadcastReceiver? = null
+    private var jvmSmokeTimeout: Runnable? = null
 
-    private lateinit var column: LinearLayout
-    private lateinit var accountChip: Chip
-    private lateinit var versionChip: Chip
-    private lateinit var playButton: MaterialButton
-    private lateinit var progress: ProgressBar
-    private lateinit var statusText: TextView
-
-    private var versions: List<MinecraftVersion>? = null
-    private var selectedVersionId: String = ""
-    private var showAllVersions = false
-    private var busy = false
-    private var catalogLoading = false
-
-    private var smokeReceiver: BroadcastReceiver? = null
-    private var smokeTimeout: Runnable? = null
-
-    // ---------------------------------------------------------------- lifecycle
+    private val actions by lazy {
+        LauncherActions(
+            navigate = { tab -> updateState { copy(tab = tab) } },
+            setFilter = { filter -> updateState { copy(filter = filter) } },
+            selectVersion = ::selectVersion,
+            refreshCatalog = ::loadVersionCatalog,
+            installVersion = ::installVersion,
+            redownloadVersion = ::confirmRedownloadVersion,
+            play = ::onPlayPressed,
+            installRuntime = { installRuntimeForSelectedVersion(forceRedownload = false) },
+            installJava = ::installJava,
+            redownloadRuntime = ::confirmRedownloadRuntime,
+            signInMicrosoft = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
+            manageLocalAccounts = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
+            prepareProfile = ::prepareLaunchProfile,
+            probeJvm = ::probeJvmBridge,
+            testJvm = ::runJliRuntimeSmokeTest,
+            testGraphics = { startActivity(Intent(this, EngineDiagnosticsActivity::class.java)) },
+            testPojav = { startActivity(Intent(this, PojavEngineDiagnosticsActivity::class.java)) },
+            setThemeMode = ::setThemeMode,
+            setAmoledBlack = ::setAmoledBlack,
+            setDynamicColor = ::setDynamicColor,
+            requestDeveloperMode = ::requestDeveloperMode,
+            setKeepScreenOn = ::setKeepScreenOn,
+            dismissDialog = { updateState { copy(dialog = null) } },
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        hideSystemBars()
         repository = VersionManifestRepository(applicationContext)
         LocalAccountRepository.restoreSelectedSession(this)
         val prefs = getPreferences(MODE_PRIVATE)
-        selectedVersionId = prefs.getString(KEY_SELECTED_VERSION, "").orEmpty()
-        showAllVersions = prefs.getBoolean(KEY_SHOW_ALL, false)
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        setContentView(buildContent())
-        refreshAccountChip()
-        refreshVersionChip()
-        loadCatalog()
+        val settingsPrefs = getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE)
+        val selected = prefs.getString(KEY_SELECTED_VERSION, "").orEmpty()
+        uiState.value = uiState.value.copy(
+            selectedVersionId = selected,
+            themeMode = ThemeSettings.read(this).mode,
+            amoledBlack = ThemeSettings.read(this).amoled,
+            dynamicColor = ThemeSettings.read(this).dynamicColor,
+            developerMode = settingsPrefs.getBoolean(KEY_DEVELOPER_MODE, false),
+            keepScreenOn = settingsPrefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
+            accountStatus = accountStatusSummary(),
+        )
+        applyKeepScreenOn(uiState.value.keepScreenOn)
+        setContent {
+            SallyLauncherRoot(state = uiState.value, actions = actions)
+        }
+        updateRuntimeStatus()
+        loadVersionCatalog()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::accountChip.isInitialized) refreshAccountChip()
+        hideSystemBars()
+        LocalAccountRepository.restoreSelectedSession(this)
+        updateAccountStatus()
+        refreshInstalledVersionsAsync()
     }
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        if (::column.isInitialized) column.layoutParams = column.layoutParams.apply { width = columnWidth() }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
+    // Fullscreen: hide status and navigation bars; they reappear briefly on a swipe.
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     override fun onDestroy() {
-        clearSmokeReceiver()
-        ioExecutor.shutdown()
+        clearJliSmokeReceiver()
+        ioExecutor.shutdownNow()
         super.onDestroy()
     }
 
-    // ---------------------------------------------------------------- layout
-
-    private class Chip(val card: MaterialCardView, val icon: TextView, val primary: TextView, val secondary: TextView)
-
-    private fun buildContent(): View {
-        val root = FrameLayout(this)
-        root.addView(CosmicBackgroundView(this), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-        }
-        val page = FrameLayout(this)
-        scroll.addView(page, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        // Top bar: brand + menu
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        topBar.addView(TextView(this).apply {
-            text = "SALLY"
-            textSize = 13f
-            letterSpacing = 0.35f
-            setTextColor(res(R.color.cosmic_text_dim))
-            setTypeface(typeface, Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        topBar.addView(TextView(this).apply {
-            text = "⋮"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(res(R.color.cosmic_text))
-            contentDescription = "Menu"
-            val ripple = TypedValue()
-            if (theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)) {
-                setBackgroundResource(ripple.resourceId)
-            }
-            setOnClickListener { showToolsMenu(it) }
-        }, LinearLayout.LayoutParams(dp(44), dp(44)))
-        page.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP).apply {
-            setMargins(dp(20), dp(12), dp(12), 0)
-        })
-
-        // Centered column
-        column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        column.addView(TextView(this).apply {
-            text = "Minecraft"
-            textSize = 34f
-            setTextColor(res(R.color.cosmic_text))
-            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
-        })
-        column.addView(TextView(this).apply {
-            text = "Java Edition"
-            textSize = 14f
-            letterSpacing = 0.15f
-            setTextColor(res(R.color.cosmic_cyan))
-        })
-        column.addView(space(32))
-
-        accountChip = makeChip("Account")
-        accountChip.card.setOnClickListener { if (!busy) onAccountChipClicked() }
-        column.addView(accountChip.card, matchWrap())
-        column.addView(space(12))
-
-        versionChip = makeChip("Version")
-        versionChip.card.setOnClickListener { if (!busy) onVersionChipClicked() }
-        column.addView(versionChip.card, matchWrap())
-        column.addView(space(24))
-
-        playButton = MaterialButton(this).apply {
-            text = "Play"
-            textSize = 18f
-            isAllCaps = false
-            letterSpacing = 0.1f
-            cornerRadius = dp(20)
-            setTypeface(typeface, Typeface.BOLD)
-            setBackgroundColor(res(R.color.cosmic_violet))
-            setTextColor(res(R.color.cosmic_void))
-            setOnClickListener { onPlayClicked() }
-        }
-        column.addView(playButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60)))
-
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            visibility = View.INVISIBLE
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(res(R.color.cosmic_cyan))
-        }
-        column.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4)).apply { topMargin = dp(14) })
-
-        statusText = TextView(this).apply {
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(res(R.color.cosmic_text_dim))
-        }
-        column.addView(statusText, matchWrap().apply { topMargin = dp(10) })
-
-        page.addView(column, FrameLayout.LayoutParams(columnWidth(), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply {
-            topMargin = dp(56)
-            bottomMargin = dp(24)
-        })
-
-        root.addView(scroll, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        return root
+    private inline fun updateState(reducer: LauncherUiState.() -> LauncherUiState) {
+        uiState.value = uiState.value.reducer()
     }
 
-    private fun makeChip(label: String): Chip {
-        val card = MaterialCardView(this).apply {
-            radius = dp(18).toFloat()
-            cardElevation = 0f
-            strokeWidth = dp(1)
-            strokeColor = res(R.color.cosmic_outline)
-            setCardBackgroundColor(res(R.color.cosmic_surface))
-            isClickable = true
-            isFocusable = true
-            contentDescription = label
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(16), dp(12))
-        }
-        val icon = TextView(this).apply {
-            gravity = Gravity.CENTER
-            textSize = 16f
-            setTextColor(res(R.color.cosmic_text))
-            setTypeface(typeface, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(res(R.color.cosmic_violet_dark))
-            }
-        }
-        row.addView(icon, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(14) })
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val primary = TextView(this).apply {
-            textSize = 17f
-            setTextColor(res(R.color.cosmic_text))
-            setTypeface(typeface, Typeface.BOLD)
-            maxLines = 1
-        }
-        val secondary = TextView(this).apply {
-            textSize = 12f
-            setTextColor(res(R.color.cosmic_text_dim))
-            maxLines = 1
-        }
-        texts.addView(primary)
-        texts.addView(secondary)
-        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(TextView(this).apply {
-            text = "▾"
-            textSize = 16f
-            setTextColor(res(R.color.cosmic_text_dim))
-        })
-        card.addView(row, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        return Chip(card, icon, primary, secondary)
+    private fun showDialog(dialog: LauncherDialog) = updateState { copy(dialog = dialog) }
+
+    private fun showMessage(title: String, message: String, confirmText: String = "OK", onConfirm: (() -> Unit)? = null) {
+        showDialog(LauncherDialog(title = title, message = message, confirmText = confirmText, onConfirm = onConfirm))
     }
 
-    private fun columnWidth(): Int {
-        val available = resources.displayMetrics.widthPixels - dp(48)
-        return minOf(available, dp(400))
-    }
-
-    // ---------------------------------------------------------------- account
-
-    private fun refreshAccountChip() {
-        val session = MinecraftLaunchSessionStore.current()
-        if (session == null || session.validationError() != null) {
-            if (session != null) MinecraftLaunchSessionStore.clear()
-            accountChip.icon.text = "+"
-            accountChip.primary.text = "Add account"
-            accountChip.secondary.text = "Tap to choose"
-        } else {
-            accountChip.icon.text = session.username.first().uppercaseChar().toString()
-            accountChip.primary.text = session.username
-            accountChip.secondary.text =
-                if (session.accountType == MinecraftAccountType.LOCAL) "Offline account" else "Microsoft account"
-        }
-    }
-
-    private sealed class AccountRow {
-        data class Local(val profile: OfflineAccountProfile, val active: Boolean) : AccountRow()
-        data class Microsoft(val username: String) : AccountRow()
-        object AddOffline : AccountRow()
-        object SignInMicrosoft : AccountRow()
-    }
-
-    private fun onAccountChipClicked() {
-        val hasAny = LocalAccountRepository.list(this).isNotEmpty() || MinecraftLaunchSessionStore.current() != null
-        if (hasAny) showAccountMenu() else showAddOfflineDialog()
-    }
-
-    private fun showAccountMenu() {
-        val session = MinecraftLaunchSessionStore.current()
-        val rows = ArrayList<AccountRow>()
-        if (session != null && session.accountType == MinecraftAccountType.MICROSOFT) rows += AccountRow.Microsoft(session.username)
-        LocalAccountRepository.list(this).forEach { profile ->
-            rows += AccountRow.Local(
-                profile,
-                active = session != null && session.accountType == MinecraftAccountType.LOCAL && session.username.equals(profile.username, true),
-            )
-        }
-        rows += AccountRow.AddOffline
-        rows += AccountRow.SignInMicrosoft
-
-        var popup: ListPopupWindow? = null
-        val adapter = RowAdapter(rows) { row ->
-            when (row) {
-                is AccountRow.Local -> menuRow(
-                    title = row.profile.username,
-                    subtitle = "Offline",
-                    selected = row.active,
-                    trailing = "✕",
-                    onTrailing = {
-                        popup?.dismiss()
-                        confirmRemove(row.profile.username)
-                    },
-                )
-                is AccountRow.Microsoft -> menuRow(row.username, "Microsoft", selected = true)
-                AccountRow.AddOffline -> menuRow("＋  Offline account", null, accent = true)
-                AccountRow.SignInMicrosoft -> menuRow("Microsoft sign-in", null, accent = true)
-            }
-        }
-        popup = showPopup(accountChip.card, adapter, rows.size) { position ->
-            when (val row = rows[position]) {
-                is AccountRow.Local -> runCatching { LocalAccountRepository.activate(this, row.profile.username) }
-                    .onFailure { Toast.makeText(this, it.message, Toast.LENGTH_SHORT).show() }
-                is AccountRow.Microsoft -> startActivity(Intent(this, MicrosoftLoginActivity::class.java))
-                AccountRow.AddOffline -> showAddOfflineDialog()
-                AccountRow.SignInMicrosoft -> startActivity(Intent(this, MicrosoftLoginActivity::class.java))
-            }
-            refreshAccountChip()
-        }
-    }
-
-    private fun showAddOfflineDialog() {
-        val input = TextInputEditText(this).apply {
-            setSingleLine()
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            filters = arrayOf(InputFilter.LengthFilter(16))
-        }
-        val layout = TextInputLayout(this).apply {
-            hint = "Username"
-            helperText = "3–16 letters, numbers or _"
-            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
-            addView(input)
-        }
-        val container = FrameLayout(this).apply {
-            setPadding(dp(24), dp(8), dp(24), 0)
-            addView(layout)
-        }
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle("Add offline account")
-            .setView(container)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Add", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                try {
-                    LocalAccountRepository.add(this, input.text?.toString().orEmpty())
-                    dialog.dismiss()
-                    refreshAccountChip()
-                } catch (error: IllegalArgumentException) {
-                    layout.error = error.message
-                }
-            }
-        }
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-        dialog.show()
-        input.requestFocus()
-    }
-
-    private fun confirmRemove(username: String) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Remove $username?")
-            .setMessage("This offline account will be deleted from the launcher.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Remove") { _, _ ->
-                LocalAccountRepository.remove(this, username)
-                refreshAccountChip()
-            }
-            .show()
-    }
-
-    // ---------------------------------------------------------------- versions
-
-    private sealed class VersionRow {
-        data class Item(val version: MinecraftVersion) : VersionRow()
-        data class Toggle(val showingAll: Boolean) : VersionRow()
-    }
-
-    private fun loadCatalog() {
-        if (catalogLoading) return
-        catalogLoading = true
-        setStatus("Loading versions…")
+    private fun loadVersionCatalog() {
+        updateState { copy(loadingCatalog = true, refreshing = true, catalogStatus = "Connecting to the official version catalog…") }
         ioExecutor.execute {
             val result = runCatching { repository.fetchCatalog() }
+            val existingCatalog = result.getOrNull()?.versions ?: catalogVersions
+            val installed = scanInstalledVersions(existingCatalog)
             mainHandler.post {
-                catalogLoading = false
                 if (isFinishing || isDestroyed) return@post
-                result.onSuccess(::onCatalogLoaded).onFailure {
-                    setStatus("Could not load versions. Tap the version to retry.")
+                updateState {
+                    copy(
+                        loadingCatalog = false,
+                        refreshing = false,
+                        catalogStatus = result.fold(
+                            { catalog -> "${catalog.versions.size} official versions · ${if (catalog.loadedFromCache) "saved catalog (offline)" else "catalog updated"}" },
+                            { "Could not refresh the catalog. Showing installed versions; check your connection and retry." },
+                        ),
+                        versions = mergeVersions(existingCatalog, installed),
+                        installedVersions = installed,
+                    )
                 }
+                result.onSuccess { catalog ->
+                    catalogVersions = catalog.versions
+                    latestReleaseId = catalog.latestReleaseId
+                    latestSnapshotId = catalog.latestSnapshotId
+                    val persisted = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
+                    val preferredInstalled = installed.firstOrNull { it.id == persisted }
+                        ?: installed.firstOrNull { it.id == catalog.latestReleaseId }
+                        ?: installed.firstOrNull()
+                    val preferred = preferredInstalled
+                        ?: catalog.versions.firstOrNull { it.id == persisted }
+                        ?: catalog.versions.firstOrNull { it.id == catalog.latestReleaseId }
+                        ?: catalog.versions.firstOrNull()
+                    if (preferred != null) {
+                        if (preferredInstalled != null) selectVersion(preferred.id)
+                        else updateState { copy(selectedVersionId = preferred.id, managerSelectedVersionId = preferred.id) }
+                    }
+                }.onFailure { error ->
+                    if (installed.isNotEmpty()) {
+                        updateState { copy(catalogStatus = "Offline catalog unavailable · ${installed.size} installed versions ready") }
+                    }
+                    Toast.makeText(this, error.message ?: "Version catalog unavailable", Toast.LENGTH_LONG).show()
+                }
+                updateRuntimeStatus()
             }
         }
     }
 
-    private fun onCatalogLoaded(catalog: VersionCatalog) {
-        versions = catalog.versions
-        val preferred = catalog.versions.firstOrNull { it.id == selectedVersionId }
-            ?: catalog.versions.firstOrNull { it.id == catalog.latestReleaseId }
-            ?: catalog.versions.firstOrNull()
-        if (preferred != null) selectVersion(preferred)
-        setStatus(if (catalog.loadedFromCache) "Offline — using saved version list" else "")
+    private fun mergeVersions(catalog: List<MinecraftVersion>, installed: List<MinecraftVersion>): List<MinecraftVersion> {
+        val byId = LinkedHashMap<String, MinecraftVersion>()
+        catalog.forEach { byId[it.id] = it }
+        installed.forEach { installedVersion -> byId.putIfAbsent(installedVersion.id, installedVersion) }
+        return byId.values.toList()
     }
 
-    private fun selectVersion(version: MinecraftVersion) {
-        selectedVersionId = version.id
-        getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, version.id).apply()
-        refreshVersionChip()
+    private fun scanInstalledVersions(knownVersions: List<MinecraftVersion>): List<MinecraftVersion> {
+        val root = LauncherStorage.minecraftRoot(applicationContext)
+        val versionsDir = File(root, "versions")
+        if (!versionsDir.isDirectory) return emptyList()
+        val byId = knownVersions.associateBy { it.id }
+        val found = versionsDir.listFiles().orEmpty().mapNotNull { directory ->
+            if (!directory.isDirectory) return@mapNotNull null
+            val id = directory.name
+            val metadataFile = File(directory, "$id.json")
+            val jar = File(directory, "$id.jar")
+            if (!metadataFile.isFile || metadataFile.length() <= 0L || !jar.isFile || jar.length() <= 0L) return@mapNotNull null
+            val metadata = runCatching { JSONObject(metadataFile.readText(Charsets.UTF_8)) }.getOrNull() ?: return@mapNotNull null
+            if (metadata.optString("id").let { it.isNotBlank() && it != id }) return@mapNotNull null
+            val official = byId[id]
+            MinecraftVersion(
+                id = id,
+                type = official?.type ?: metadata.optString("type", "release").ifBlank { "release" },
+                url = official?.url.orEmpty(),
+                releaseTime = official?.releaseTime ?: metadata.optString("releaseTime", metadata.optString("time", "")),
+            )
+        }
+        val order = knownVersions.mapIndexed { index, version -> version.id to index }.toMap()
+        return found.sortedWith(compareBy<MinecraftVersion> { order[it.id] ?: Int.MAX_VALUE }.thenByDescending { it.releaseTime }.thenByDescending { it.id })
     }
 
-    private fun refreshVersionChip() {
-        val selected = versions?.firstOrNull { it.id == selectedVersionId }
-        if (selectedVersionId.isBlank()) {
-            versionChip.icon.text = "…"
-            versionChip.primary.text = "Loading…"
-            versionChip.secondary.text = "Fetching official versions"
+    private fun refreshInstalledVersionsAsync() {
+        ioExecutor.execute {
+            val installed = scanInstalledVersions(catalogVersions)
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState {
+                    val selectedStillInstalled = installed.any { it.id == selectedVersionId }
+                    val fallback = installed.firstOrNull { it.id == latestReleaseId } ?: installed.firstOrNull()
+                    val normalizedSelected = if (installed.isNotEmpty() && !selectedStillInstalled) fallback?.id.orEmpty() else selectedVersionId
+                    if (normalizedSelected != selectedVersionId && normalizedSelected.isNotBlank()) {
+                        getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, normalizedSelected).apply()
+                    }
+                    copy(installedVersions = installed, versions = mergeVersions(catalogVersions, installed), selectedVersionId = normalizedSelected)
+                }
+                updateRuntimeStatus()
+            }
+        }
+    }
+
+    private fun selectVersion(versionId: String) {
+        val current = uiState.value
+        val version = current.versions.firstOrNull { it.id == versionId }
+            ?: current.installedVersions.firstOrNull { it.id == versionId }
+            ?: return
+        val isInstalled = current.installedVersions.any { it.id == version.id }
+        updateState {
+            if (isInstalled) copy(
+                selectedVersionId = version.id,
+                managerSelectedVersionId = version.id,
+            ) else copy(
+                managerSelectedVersionId = version.id,
+            )
+        }
+        if (isInstalled) getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, version.id).apply()
+    }
+
+    private fun selectedVersionForInstall(versionId: String): MinecraftVersion? =
+        uiState.value.versions.firstOrNull { it.id == versionId }
+            ?: uiState.value.installedVersions.firstOrNull { it.id == versionId }
+
+    private fun installVersion(versionId: String) = runVersionInstall(versionId, forceRedownload = false)
+
+    private fun confirmRedownloadVersion(versionId: String) {
+        if (selectedVersionForInstall(versionId) == null) {
+            showMessage("Version not found", "Refresh the official catalog and select a version again.")
             return
         }
-        versionChip.icon.text = "⛏"
-        versionChip.primary.text = selectedVersionId
-        val type = selected?.type?.replaceFirstChar { it.uppercase() } ?: "Version"
-        versionChip.secondary.text = if (isInstalled(selectedVersionId)) "$type · Ready" else "$type · Downloads on play"
+        showDialog(
+            LauncherDialog(
+                title = "Redownload Minecraft $versionId?",
+                message = "This downloads the version metadata, client JAR, libraries, and assets used by this version again. Existing shared assets may be downloaded again too, so this can use a lot of mobile data and storage space. Network failures will retry automatically and partial files can resume when the server supports it.",
+                confirmText = "Redownload",
+                onConfirm = { runVersionInstall(versionId, forceRedownload = true) },
+                dismissText = "Cancel",
+            )
+        )
     }
 
-    private fun onVersionChipClicked() {
-        val list = versions
-        if (list == null) {
-            loadCatalog()
-            return
-        }
-        val rows = ArrayList<VersionRow>()
-        list.filter { showAllVersions || it.type == "release" || it.id == selectedVersionId }
-            .forEach { rows += VersionRow.Item(it) }
-        rows += VersionRow.Toggle(showAllVersions)
-
-        var popup: ListPopupWindow? = null
-        val adapter = RowAdapter(rows) { row ->
-            when (row) {
-                is VersionRow.Item -> menuRow(
-                    title = row.version.id,
-                    subtitle = row.version.type.replaceFirstChar { it.uppercase() } +
-                        if (isInstalled(row.version.id)) " · Ready" else "",
-                    selected = row.version.id == selectedVersionId,
-                )
-                is VersionRow.Toggle -> menuRow(
-                    if (row.showingAll) "Show releases only" else "Show snapshots & old versions",
-                    null,
-                    accent = true,
-                )
-            }
-        }
-        popup = showPopup(versionChip.card, adapter, rows.size) { position ->
-            when (val row = rows[position]) {
-                is VersionRow.Item -> selectVersion(row.version)
-                is VersionRow.Toggle -> {
-                    showAllVersions = !row.showingAll
-                    getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_SHOW_ALL, showAllVersions).apply()
-                    versionChip.card.post { onVersionChipClicked() }
-                }
-            }
-        }
-        // Scroll the list to the current selection.
-        val selectedIndex = rows.indexOfFirst { it is VersionRow.Item && it.version.id == selectedVersionId }
-        if (selectedIndex > 3) popup?.listView?.post { popup?.setSelection(selectedIndex - 2) }
-    }
-
-    private fun versionDir(id: String) = File(File(LauncherStorage.minecraftRoot(applicationContext), "versions"), id)
-
-    private fun isInstalled(id: String): Boolean = runCatching { File(versionDir(id), INSTALLED_MARKER).isFile }.getOrDefault(false)
-
-    // ---------------------------------------------------------------- play
-
-    private fun onPlayClicked() {
-        if (busy) return
-        val selected = versions?.firstOrNull { it.id == selectedVersionId }
+    private fun runVersionInstall(versionId: String, forceRedownload: Boolean) {
+        val selected = selectedVersionForInstall(versionId)
         if (selected == null) {
-            Toast.makeText(this, "Versions are still loading.", Toast.LENGTH_SHORT).show()
-            if (versions == null) loadCatalog()
+            showMessage("Version not found", "Refresh the official catalog and select a version again.")
+            return
+        }
+        val actionKey = if (forceRedownload) "redownload:$versionId" else "install:$versionId"
+        val startLabel = if (forceRedownload) "Preparing full redownload of Minecraft $versionId…" else "Preparing Minecraft $versionId…"
+        updateState { copy(managerSelectedVersionId = versionId, busyAction = actionKey, catalogStatus = startLabel) }
+        ioExecutor.execute {
+            val result = runCatching {
+                VersionInstaller(applicationContext).installVersion(
+                    version = selected,
+                    onProgress = { message ->
+                        mainHandler.post {
+                            if (!isFinishing && !isDestroyed) updateState { copy(catalogStatus = message) }
+                        }
+                    },
+                    forceRedownload = forceRedownload,
+                )
+            }
+            val newInstalled = scanInstalledVersions(catalogVersions)
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState {
+                    copy(
+                        busyAction = null,
+                        installedVersions = newInstalled,
+                        versions = mergeVersions(catalogVersions, newInstalled),
+                        filter = VersionFilter.INSTALLED,
+                        catalogStatus = result.fold(
+                            { "${it.versionId} installed and verified · ${it.downloadedBytes / (1024 * 1024)} MB transferred" },
+                            { error -> "Download failed: ${error.message ?: "unknown error"}" },
+                        ),
+                    )
+                }
+                result.onSuccess { installed ->
+                    selectVersion(installed.versionId)
+                    showMessage(
+                        if (forceRedownload) "Redownload complete" else "Version installed",
+                        "Minecraft ${installed.versionId} is installed and its downloaded files passed available integrity checks. Libraries: ${installed.libraryFiles}. Assets: ${installed.assetFiles}. Data transferred this run: ${installed.downloadedBytes / (1024 * 1024)} MB."
+                    )
+                }.onFailure { error ->
+                    val detail = error.message ?: "Could not download Minecraft version files. Check internet, storage, and file permissions."
+                    showDialog(
+                        LauncherDialog(
+                            title = "Download failed",
+                            message = "$detail\n\nThe launcher retries temporary network errors automatically. You can retry the missing files or choose a full redownload.",
+                            confirmText = "Retry",
+                            onConfirm = { runVersionInstall(versionId, forceRedownload = false) },
+                            dismissText = "Close",
+                            neutralText = "Redownload",
+                            onNeutral = { confirmRedownloadVersion(versionId) },
+                        )
+                    )
+                }
+                updateRuntimeStatus()
+            }
+        }
+    }
+
+    private fun selectedInstalledVersion(): MinecraftVersion? {
+        val state = uiState.value
+        return state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
+    }
+
+    private fun confirmRedownloadRuntime() {
+        if (selectedInstalledVersion() == null) {
+            showMessage("No installed version", "Install a Minecraft version first so the launcher can choose the compatible Java runtime.")
+            return
+        }
+        showDialog(
+            LauncherDialog(
+                title = "Redownload Java runtime?",
+                message = "The compatible Java runtime will be downloaded and verified again before replacing the current runtime. This can use several hundred megabytes of data and needs sufficient free storage. The currently installed runtime is kept until the new one passes validation.",
+                confirmText = "Redownload Java",
+                onConfirm = { installRuntimeForSelectedVersion(forceRedownload = true) },
+                dismissText = "Cancel",
+            )
+        )
+    }
+
+    private fun installRuntimeForSelectedVersion(forceRedownload: Boolean = false, resumeRedownload: Boolean = false) {
+        val selected = selectedInstalledVersion()
+        if (selected == null) {
+            showMessage("No installed version", "Install a Minecraft version first. Open Versions and choose a release, snapshot, beta, or alpha.", "Open Versions") {
+                updateState { copy(tab = LauncherTab.VERSIONS) }
+            }
+            return
+        }
+        val actionKey = if (forceRedownload) "runtime-redownload" else "runtime"
+        updateState { copy(busyAction = actionKey, runtimeStatus = if (forceRedownload) "Preparing to redownload a compatible Java runtime for ${selected.id}…" else "Preparing a compatible Java runtime for ${selected.id}…") }
+        ioExecutor.execute {
+            val result = runCatching {
+                RuntimeManager(applicationContext).installForVersion(
+                    version = selected,
+                    forceRedownload = forceRedownload,
+                    resumeRedownload = resumeRedownload,
+                    onProgress = { message ->
+                        mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
+                    },
+                )
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState { copy(busyAction = null) }
+                updateRuntimeStatus()
+                result.onSuccess { installed ->
+                    updateState { copy(runtimeStatus = "${installed.displayName()} installed and verified") }
+                    showMessage(
+                        if (forceRedownload) "Java runtime redownloaded" else "Java runtime ready",
+                        "Java ${installed.majorVersion} for Android ${installed.architecture} is installed and verified. Run the Java self-test from DEV if startup fails."
+                    )
+                }.onFailure { error ->
+                    val detail = error.message ?: "Could not install a compatible Java runtime. Check the internet connection and free storage."
+                    updateState { copy(runtimeStatus = "Runtime download failed: $detail") }
+                    showDialog(
+                        LauncherDialog(
+                            title = "Runtime download failed",
+                            message = "$detail\n\nTemporary network failures are retried automatically. You can retry the runtime installation or choose to redownload it.",
+                            confirmText = "Retry",
+                            onConfirm = { installRuntimeForSelectedVersion(forceRedownload = forceRedownload, resumeRedownload = forceRedownload) },
+                            dismissText = "Close",
+                            neutralText = "Redownload",
+                            onNeutral = { confirmRedownloadRuntime() },
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun updateRuntimeStatus() {
+        ioExecutor.execute {
+            val runtimes = runCatching { RuntimeManager(applicationContext).installedRuntimes() }.getOrDefault(emptyList())
+            val supported = runCatching { RuntimeManager(applicationContext).supportedJavaMajors() }.getOrDefault(listOf(8, 17))
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState {
+                    copy(
+                        installedJavaMajors = runtimes.map { it.majorVersion },
+                        supportedJavaMajors = supported,
+                        runtimeStatus = if (runtimes.isEmpty()) "No verified Java runtimes installed on this device." else "Installed: " + runtimes.joinToString(" · ") { it.displayName() })
+                }
+            }
+        }
+    }
+
+    private fun prepareLaunchProfile() {
+        val selected = selectedInstalledVersion()
+        if (selected == null) {
+            showMessage("No installed version", "Install Minecraft version files before preparing a launch profile.")
+            return
+        }
+        updateState { copy(busyAction = "prepare", engineStatus = "Resolving version metadata, AWT assets, runtime, and libraries…") }
+        ioExecutor.execute {
+            val result = runCatching {
+                val minecraftRoot = LauncherStorage.minecraftRoot(applicationContext)
+                val payloadInstaller = PojavEnginePayloadInstaller(applicationContext)
+                payloadInstaller.installCaciocavalloComponents(minecraftRoot)
+                payloadInstaller.installPatchedGlfwClasses(minecraftRoot)
+                val session = MinecraftLaunchSessionStore.current()
+                val profile = LaunchProfileBuilder(applicationContext).prepare(selected, session = session)
+                val launchSpec = JliLaunchSpecBuilder(applicationContext).build(profile)
+                profile to launchSpec
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState { copy(busyAction = null) }
+                result.onSuccess { (profile, spec) ->
+                    val blockers = spec.blockers.joinToString("\n") { "• $it" }.ifBlank { "• None reported by the spec builder" }
+                    val summary = "Minecraft ${profile.versionId}\nRequired Java: ${profile.requiredJavaMajor}\nSelected runtime: Java ${profile.runtimeMajor}\nMain class: ${profile.mainClass}\nClasspath entries: ${profile.classpathEntries.size}\nJVM arguments: ${profile.jvmArguments.size}\nGame arguments: ${profile.gameArguments.size}\nJLI argv entries: ${spec.argv.size}\nNative library directories: ${spec.nativeLibraryDirectories.size}\nWorking directory: ${spec.workingDirectory.absolutePath}\nAssets index: ${profile.assetIndexId}\nValid account profile: ${profile.hasValidAccountSession}\nAccount type: ${profile.accountType ?: "none"}\n\nRemaining blockers:\n$blockers\n\nNo session tokens are included in diagnostics."
+                    updateState { copy(engineStatus = "Launch profile checked for ${profile.versionId} · ${spec.blockers.size} blocker(s)") }
+                    showMessage("Launch profile prepared", summary)
+                }.onFailure { error ->
+                    updateState { copy(engineStatus = "Profile check failed: ${error.message ?: "unknown error"}") }
+                    showMessage("Cannot prepare launch profile", error.message ?: "The selected version is missing required launch files.")
+                }
+            }
+        }
+    }
+
+    private fun probeJvmBridge() {
+        updateState { copy(busyAction = "probe", engineStatus = "Checking installed JVM's native JLI/JVM libraries…") }
+        ioExecutor.execute {
+            val result = runCatching {
+                val runtime = RuntimeManager(applicationContext).installedRuntimes().maxByOrNull { it.majorVersion }
+                    ?: error("No verified Java runtime is installed. Install a compatible runtime first.")
+                runtime to JliBridgeDiagnostics.probe(runtime.home)
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState { copy(busyAction = null) }
+                result.onSuccess { (runtime, probe) ->
+                    updateState { copy(engineStatus = if (probe.available) "JLI loader probe passed for ${runtime.displayName()} (library availability only)." else "JLI loader probe failed for ${runtime.displayName()}.") }
+                    showMessage(if (probe.available) "JVM native loader available" else "JVM native loader not ready", "Runtime: ${runtime.displayName()}\nPath: ${runtime.home.absolutePath}\n\n${probe.details}\n\nThis probe maps native libraries and checks JLI_Launch. It does not start Minecraft.")
+                }.onFailure { error ->
+                    updateState { copy(engineStatus = "JLI probe failed: ${error.message ?: "unknown error"}") }
+                    showMessage("JVM bridge probe failed", error.message ?: "Could not inspect the installed runtime.")
+                }
+            }
+        }
+    }
+
+    private fun runJliRuntimeSmokeTest() {
+        if (jvmSmokeReceiver != null) return
+        updateState { copy(busyAction = "smoke", engineStatus = "Starting a disposable process for Java -version…") }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != JliRuntimeSmokeService.ACTION_RESULT) return
+                clearJliSmokeReceiver()
+                val passed = intent.getBooleanExtra(JliRuntimeSmokeService.EXTRA_PASSED, false)
+                val runtime = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME).orEmpty()
+                val runtimeHome = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME_HOME).orEmpty()
+                val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
+                val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
+                updateState {
+                    copy(
+                        busyAction = null,
+                        engineStatus = if (passed) "JVM startup test passed for $runtime. Minecraft rendering is not tested by this check." else "JVM startup test failed for $runtime. See the diagnostic log.",
+                    )
+                }
+                showMessage(if (passed) "Java runtime test passed" else "Java runtime test failed", "Runtime: $runtime\n${if (runtimeHome.isBlank()) "" else "Path: $runtimeHome\n"}\n$details\n\nSaved diagnostic log: $logPath\n\nThe test uses JLI_Launch with -version in a disposable Android process. It does not start Minecraft.")
+            }
+        }
+        jvmSmokeReceiver = receiver
+        val filter = IntentFilter(JliRuntimeSmokeService.ACTION_RESULT)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else {
+                @Suppress("DEPRECATION")
+                registerReceiver(receiver, filter)
+            }
+        } catch (error: Exception) {
+            clearJliSmokeReceiver()
+            updateState { copy(busyAction = null, engineStatus = "Could not listen for the JVM diagnostic result.") }
+            showMessage("JVM test unavailable", error.message ?: "Could not register diagnostic receiver.")
+            return
+        }
+        val timeout = Runnable {
+            clearJliSmokeReceiver()
+            updateState { copy(busyAction = null, engineStatus = "JVM test process did not return a result. It may have crashed during initialization.") }
+            val diagnostics = runCatching {
+                val log = File(LauncherStorage.diagnosticsRoot(applicationContext), "jli-version.log")
+                val logText = if (log.isFile) log.readText().takeLast(2500) else ""
+                val crashReport = File(cacheDir, "jli-version-work").listFiles { file -> file.name.startsWith("hs_err") }
+                    ?.filter { System.currentTimeMillis() - it.lastModified() < 120_000L }
+                    ?.maxByOrNull { it.lastModified() }?.readText()?.take(2500).orEmpty()
+                buildString { if (logText.isNotBlank()) append("\n\nJVM output:\n").append(logText); if (crashReport.isNotBlank()) append("\n\nCrash report:\n").append(crashReport) }
+            }.getOrDefault("")
+            showMessage("JVM test timed out", "The separate JVM diagnostic process did not report a result within 45 seconds. Check Android logcat and the diagnostics folder.$diagnostics")
+        }
+        jvmSmokeTimeout = timeout
+        mainHandler.postDelayed(timeout, 45_000L)
+        try {
+            startService(Intent(this, JliRuntimeSmokeService::class.java))
+        } catch (error: Exception) {
+            clearJliSmokeReceiver()
+            updateState { copy(busyAction = null, engineStatus = "Could not start the isolated JVM diagnostic process.") }
+            showMessage("JVM test unavailable", error.message ?: "Could not start the diagnostic service.")
+        }
+    }
+
+    private fun clearJliSmokeReceiver() {
+        jvmSmokeTimeout?.let(mainHandler::removeCallbacks)
+        jvmSmokeTimeout = null
+        jvmSmokeReceiver?.let { runCatching { unregisterReceiver(it) } }
+        jvmSmokeReceiver = null
+    }
+
+    private fun onPlayPressed() {
+        val selected = selectedInstalledVersion()
+        if (selected == null) {
+            showDialog(
+                LauncherDialog(
+                    title = "No installed version",
+                    message = "Open Versions, choose the Vanilla / Release, Snapshot, Old Beta, or Old Alpha channel, and install a version first.",
+                    confirmText = "Open Versions",
+                    onConfirm = { updateState { copy(tab = LauncherTab.VERSIONS, filter = VersionFilter.RELEASE) } },
+                    dismissText = "Cancel",
+                ),
+            )
             return
         }
         val session = MinecraftLaunchSessionStore.current()
         if (session == null) {
-            onAccountChipClicked()
+            showDialog(
+                LauncherDialog(
+                    title = "Choose an account",
+                    message = "Sign in with Microsoft for authenticated online play, or use a local/offline profile for single-player and servers explicitly configured to allow offline identities.",
+                    confirmText = "Microsoft sign-in",
+                    onConfirm = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
+                    dismissText = "Cancel",
+                    neutralText = "Local account",
+                    onNeutral = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
+                ),
+            )
             return
         }
-        val problem = session.validationError()
-        if (problem != null) {
+        val sessionError = session.validationError()
+        if (sessionError != null) {
             MinecraftLaunchSessionStore.clear()
-            refreshAccountChip()
-            showMessage("Account problem", problem)
+            updateAccountStatus()
+            showMessage("Minecraft account profile invalid", sessionError)
             return
         }
+        startActivity(Intent(this, PojavGameActivity::class.java).apply {
+            putExtra(PojavGameActivity.EXTRA_VERSION_ID, selected.id)
+            putExtra(PojavGameActivity.EXTRA_VERSION_TYPE, selected.type)
+            putExtra(PojavGameActivity.EXTRA_VERSION_URL, selected.url)
+            putExtra(PojavGameActivity.EXTRA_RELEASE_TIME, selected.releaseTime)
+        })
+    }
 
-        setBusy(true, "Preparing…")
+    private fun accountStatusSummary(): String {
+        val session = MinecraftLaunchSessionStore.current()
+        val problem = session?.validationError()
+        return when {
+            session == null -> "No account selected. Choose Microsoft or local/offline account."
+            problem != null -> "Account profile is invalid: $problem"
+            session.accountType == MinecraftAccountType.LOCAL -> "Using ${session.username} · Local/offline account. Online-mode servers require Microsoft authentication."
+            else -> "Signed in as ${session.username} · Microsoft account. Session tokens remain in memory only."
+        }
+    }
+
+    private fun updateAccountStatus() {
+        val session = MinecraftLaunchSessionStore.current()
+        if (session?.validationError() != null) MinecraftLaunchSessionStore.clear()
+        updateState { copy(accountStatus = accountStatusSummary()) }
+    }
+
+    private fun setThemeMode(mode: ThemeMode) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putString(ThemeSettings.KEY_THEME_MODE, mode.name).apply()
+        updateState { copy(themeMode = mode) }
+    }
+
+    private fun setAmoledBlack(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(ThemeSettings.KEY_AMOLED, enabled).apply()
+        updateState { copy(amoledBlack = enabled) }
+    }
+
+    private fun setDynamicColor(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(ThemeSettings.KEY_DYNAMIC_COLOR, enabled).apply()
+        updateState { copy(dynamicColor = enabled) }
+    }
+
+    // design.md §7.8: enabling Developer mode shows a warning first; disabling is immediate.
+    private fun requestDeveloperMode(enabled: Boolean) {
+        if (!enabled) {
+            setDeveloperMode(false)
+            return
+        }
+        showDialog(
+            LauncherDialog(
+                title = "Aktifkan Mode Developer?",
+                message = "Opsi ini untuk pengguna tingkat lanjut. Salah mengatur bisa membuat game crash.",
+                confirmText = "Aktifkan",
+                onConfirm = { setDeveloperMode(true) },
+                dismissText = "Batal",
+            )
+        )
+    }
+
+    private fun setDeveloperMode(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_DEVELOPER_MODE, enabled).apply()
+        updateState { copy(developerMode = enabled) }
+    }
+
+    private fun installJava(major: Int) {
+        updateState { copy(busyAction = "runtime", runtimeStatus = "Menyiapkan Java $major…") }
         ioExecutor.execute {
             val result = runCatching {
-                if (!isInstalled(selected.id)) {
-                    VersionInstaller(applicationContext).installVersion(selected) { message -> postStatus(message) }
-                    File(versionDir(selected.id), INSTALLED_MARKER).writeText("ok")
+                RuntimeManager(applicationContext).installMajor(major) { message ->
+                    mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
                 }
-                postStatus("Preparing Java…")
-                RuntimeManager(applicationContext).installForVersion(selected) { message -> postStatus(message) }
-                postStatus("Preparing engine…")
-                val minecraftRoot = LauncherStorage.minecraftRoot(applicationContext)
-                val payload = PojavEnginePayloadInstaller(applicationContext)
-                payload.installCaciocavalloComponents(minecraftRoot)
-                payload.installPatchedGlfwClasses(minecraftRoot)
             }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                setBusy(false, "")
-                refreshVersionChip()
-                result.onSuccess { launchGame(selected) }.onFailure { error ->
-                    setStatus("Failed. Check connection and storage, then retry.")
-                    showMessage("Could not prepare ${selected.id}", error.message ?: error.javaClass.simpleName)
+                updateState { copy(busyAction = null) }
+                updateRuntimeStatus()
+                result.onFailure { error ->
+                    showMessage("Install Java gagal", error.message ?: "Periksa koneksi internet dan ruang penyimpanan.")
                 }
             }
         }
     }
 
-    private fun launchGame(version: MinecraftVersion) {
-        startActivity(Intent(this, PojavGameActivity::class.java).apply {
-            putExtra(PojavGameActivity.EXTRA_VERSION_ID, version.id)
-            putExtra(PojavGameActivity.EXTRA_VERSION_TYPE, version.type)
-            putExtra(PojavGameActivity.EXTRA_VERSION_URL, version.url)
-            putExtra(PojavGameActivity.EXTRA_RELEASE_TIME, version.releaseTime)
-        })
+    private fun setKeepScreenOn(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
+        applyKeepScreenOn(enabled)
+        updateState { copy(keepScreenOn = enabled) }
     }
 
-    private fun setBusy(value: Boolean, message: String) {
-        busy = value
-        playButton.isEnabled = !value
-        playButton.text = if (value) "Preparing…" else "Play"
-        accountChip.card.alpha = if (value) 0.5f else 1f
-        versionChip.card.alpha = if (value) 0.5f else 1f
-        progress.visibility = if (value) View.VISIBLE else View.INVISIBLE
-        setStatus(message)
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
-
-    private fun setStatus(message: String) {
-        if (::statusText.isInitialized) statusText.text = message
-    }
-
-    private fun postStatus(message: String) {
-        mainHandler.post { if (!isFinishing && !isDestroyed) setStatus(message) }
-    }
-
-    // ---------------------------------------------------------------- tools menu
-
-    private fun showToolsMenu(anchor: View) {
-        PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "Refresh versions")
-            menu.add(0, 2, 1, "Java self-test")
-            menu.add(0, 3, 2, "Graphics & input test")
-            menu.add(0, 4, 3, "Pojav bridge test")
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    1 -> loadCatalog()
-                    2 -> runJavaSelfTest()
-                    3 -> startActivity(Intent(this@MainActivity, EngineDiagnosticsActivity::class.java))
-                    4 -> startActivity(Intent(this@MainActivity, PojavEngineDiagnosticsActivity::class.java))
-                }
-                true
-            }
-            show()
-        }
-    }
-
-    private fun runJavaSelfTest() {
-        if (smokeReceiver != null) {
-            Toast.makeText(this, "Self-test already running…", Toast.LENGTH_SHORT).show()
-            return
-        }
-        setStatus("Running Java self-test…")
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action != JliRuntimeSmokeService.ACTION_RESULT) return
-                clearSmokeReceiver()
-                setStatus("")
-                val passed = intent.getBooleanExtra(JliRuntimeSmokeService.EXTRA_PASSED, false)
-                val runtime = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME).orEmpty()
-                val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
-                val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
-                showMessage(
-                    if (passed) "Java self-test passed" else "Java self-test failed",
-                    "Runtime: $runtime\n\n$details\n\nLog: $logPath",
-                )
-            }
-        }
-        smokeReceiver = receiver
-        val filter = IntentFilter(JliRuntimeSmokeService.ACTION_RESULT)
-        try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                registerReceiver(receiver, filter)
-            }
-            val timeout = Runnable {
-                clearSmokeReceiver()
-                setStatus("")
-                showMessage("Java self-test timed out", "No result within 45 seconds. Check the diagnostics folder and logcat.")
-            }
-            smokeTimeout = timeout
-            mainHandler.postDelayed(timeout, 45_000L)
-            startService(Intent(this, JliRuntimeSmokeService::class.java))
-        } catch (error: Exception) {
-            clearSmokeReceiver()
-            setStatus("")
-            showMessage("Self-test unavailable", error.message ?: "Could not start the diagnostic service.")
-        }
-    }
-
-    private fun clearSmokeReceiver() {
-        smokeTimeout?.let(mainHandler::removeCallbacks)
-        smokeTimeout = null
-        smokeReceiver?.let { runCatching { unregisterReceiver(it) } }
-        smokeReceiver = null
-    }
-
-    // ---------------------------------------------------------------- shared UI helpers
-
-    private class RowAdapter<T>(private val items: List<T>, private val create: (T) -> View) : BaseAdapter() {
-        override fun getCount() = items.size
-        override fun getItem(position: Int) = items[position]
-        override fun getItemId(position: Int) = position.toLong()
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View = create(items[position])
-    }
-
-    private fun showPopup(anchor: View, adapter: BaseAdapter, rowCount: Int, onPick: (Int) -> Unit): ListPopupWindow {
-        val popup = ListPopupWindow(this)
-        popup.anchorView = anchor
-        popup.width = anchor.width.coerceAtLeast(dp(240))
-        popup.height = minOf(dp(8) + rowCount * dp(56), dp(340))
-        popup.isModal = true
-        popup.verticalOffset = dp(6)
-        popup.setBackgroundDrawable(GradientDrawable().apply {
-            setColor(res(R.color.cosmic_surface_high))
-            cornerRadius = dp(18).toFloat()
-            setStroke(dp(1), res(R.color.cosmic_outline))
-        })
-        popup.setAdapter(adapter)
-        popup.setOnItemClickListener { _, _, position, _ ->
-            popup.dismiss()
-            onPick(position)
-        }
-        popup.show()
-        popup.listView?.apply {
-            divider = null
-            setPadding(0, dp(4), 0, dp(4))
-            clipToPadding = false
-        }
-        return popup
-    }
-
-    private fun menuRow(
-        title: String,
-        subtitle: String?,
-        selected: Boolean = false,
-        accent: Boolean = false,
-        trailing: String? = null,
-        onTrailing: (() -> Unit)? = null,
-    ): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(8), dp(8), dp(8))
-            minimumHeight = dp(52)
-        }
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(TextView(this).apply {
-            text = title
-            textSize = 16f
-            maxLines = 1
-            setTextColor(res(if (accent || selected) R.color.cosmic_violet else R.color.cosmic_text))
-            if (selected) setTypeface(typeface, Typeface.BOLD)
-        })
-        if (subtitle != null) {
-            texts.addView(TextView(this).apply {
-                text = subtitle
-                textSize = 12f
-                setTextColor(res(R.color.cosmic_text_dim))
-            })
-        }
-        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (selected && trailing == null) {
-            row.addView(TextView(this).apply {
-                text = "✓"
-                textSize = 16f
-                setTextColor(res(R.color.cosmic_cyan))
-                setPadding(dp(8), 0, dp(12), 0)
-            })
-        }
-        if (trailing != null) {
-            row.addView(TextView(this).apply {
-                text = trailing
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setTextColor(res(R.color.cosmic_text_dim))
-                contentDescription = "Remove"
-                setOnClickListener { onTrailing?.invoke() }
-            }, LinearLayout.LayoutParams(dp(44), dp(44)))
-        }
-        return row
-    }
-
-    private fun showMessage(title: String, message: String) {
-        MaterialAlertDialogBuilder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null).show()
-    }
-
-    private fun space(heightDp: Int) = View(this).apply {
-        layoutParams = LinearLayout.LayoutParams(1, dp(heightDp))
-    }
-
-    private fun matchWrap() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-    private fun res(id: Int): Int = ContextCompat.getColor(this, id)
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private companion object {
         const val KEY_SELECTED_VERSION = "selected_minecraft_version"
-        const val KEY_SHOW_ALL = "show_all_versions"
-        const val INSTALLED_MARKER = ".sally-installed"
+        const val KEY_DARK_THEME = "dark_theme"
+        const val KEY_DEVELOPER_MODE = "developer_mode"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val PREFS_SETTINGS = "sally_launcher_settings"
     }
 }

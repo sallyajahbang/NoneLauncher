@@ -9,23 +9,56 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
-import com.sally.launcher.R
-import com.sally.launcher.ui.CosmicBackgroundView
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sally.launcher.SallyLauncherTheme
+import com.sally.launcher.ThemeSettings
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.engine.MinecraftAccountType
-import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -39,25 +72,29 @@ class MicrosoftLoginActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var currentCancellation = AtomicBoolean(false)
     private val authenticator = MinecraftMicrosoftAuthenticator()
-
-    private lateinit var clientIdInput: TextInputEditText
-    private lateinit var codeText: TextView
-    private lateinit var urlText: TextView
-    private lateinit var statusText: TextView
-    private lateinit var startButton: MaterialButton
-    private lateinit var openBrowserButton: MaterialButton
-    private lateinit var copyCodeButton: MaterialButton
-    private lateinit var cancelButton: MaterialButton
-    private lateinit var signOutButton: MaterialButton
+    private var uiState by mutableStateOf(MicrosoftSignInUiState())
     private var currentChallenge: MinecraftMicrosoftAuthenticator.DeviceCodeChallenge? = null
     private var activeFuture: Future<*>? = null
     @Volatile private var completed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildContent())
-        clientIdInput.setText(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_CLIENT_ID, "").orEmpty())
+        uiState = uiState.copy(clientId = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_CLIENT_ID, "").orEmpty())
         refreshAccountState()
+        setContent {
+            SallyLauncherTheme(settings = ThemeSettings.read(this)) {
+                MicrosoftSignInScreen(
+                    state = uiState,
+                    onClientIdChange = { uiState = uiState.copy(clientId = it, clientIdError = null) },
+                    onBegin = { beginSignIn(uiState.clientId) },
+                    onOpenBrowser = ::openVerificationPage,
+                    onCopyCode = ::copyUserCode,
+                    onCancel = ::cancelSignInByUser,
+                    onSignOut = ::signOut,
+                    onBack = { setResult(Activity.RESULT_OK); finish() },
+                )
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -66,167 +103,43 @@ class MicrosoftLoginActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun buildContent(): View {
-        val dim = androidx.core.content.ContextCompat.getColor(this, R.color.cosmic_text_dim)
-        val textColor = androidx.core.content.ContextCompat.getColor(this, R.color.cosmic_text)
-        val root = FrameLayout(this)
-        root.addView(CosmicBackgroundView(this), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-        }
-        val page = FrameLayout(this)
-        scroll.addView(page, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val width = minOf(resources.displayMetrics.widthPixels - dp(48), dp(400))
-        page.addView(content, FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER).apply {
-            topMargin = dp(24)
-            bottomMargin = dp(24)
-        })
-
-        content.addView(label("Microsoft", 32f, false, textColor).apply {
-            typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
-        })
-        content.addView(label("Sign in to play online", 14f, false, androidx.core.content.ContextCompat.getColor(this, R.color.cosmic_cyan)))
-        gap(content, 24)
-
-        val inputLayout = TextInputLayout(this).apply {
-            hint = "Application (client) ID"
-            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
-            helperText = "From your Microsoft Entra app (public client, device code)"
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        clientIdInput = TextInputEditText(inputLayout.context).apply {
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT
-        }
-        inputLayout.addView(clientIdInput)
-        content.addView(inputLayout)
-        gap(content, 16)
-
-        startButton = MaterialButton(this).apply {
-            text = "Get sign-in code"
-            isAllCaps = false
-            textSize = 16f
-            cornerRadius = dp(18)
-            setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@MicrosoftLoginActivity, R.color.cosmic_violet))
-            setTextColor(androidx.core.content.ContextCompat.getColor(this@MicrosoftLoginActivity, R.color.cosmic_void))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56))
-            setOnClickListener { beginSignIn() }
-        }
-        content.addView(startButton)
-        gap(content, 20)
-
-        val card = MaterialCardView(this).apply {
-            radius = dp(18).toFloat()
-            cardElevation = 0f
-            strokeWidth = dp(1)
-            strokeColor = androidx.core.content.ContextCompat.getColor(this@MicrosoftLoginActivity, R.color.cosmic_outline)
-            setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(this@MicrosoftLoginActivity, R.color.cosmic_surface))
-        }
-        val inner = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(12))
-        }
-        card.addView(inner, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        codeText = label("Code appears here", 26f, true, textColor).apply {
-            letterSpacing = 0.1f
-            setTextIsSelectable(true)
-        }
-        inner.addView(codeText)
-        gap(inner, 4)
-        urlText = label("Then open the verification page and enter it.", 13f, false, dim).apply { setTextIsSelectable(true) }
-        inner.addView(urlText)
-        gap(inner, 12)
-
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        openBrowserButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Open page"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener { openVerificationPage() }
-        }
-        copyCodeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Copy code"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener { copyUserCode() }
-        }
-        row.addView(openBrowserButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
-        row.addView(copyCodeButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        inner.addView(row)
-        cancelButton = MaterialButton(this, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = "Cancel"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener { cancelSignInByUser() }
-        }
-        inner.addView(cancelButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        content.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        gap(content, 14)
-
-        statusText = label("Not signed in.", 13f, false, dim).apply { gravity = android.view.Gravity.CENTER }
-        content.addView(statusText, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        gap(content, 8)
-        signOutButton = MaterialButton(this, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = "Sign out"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener {
-                cancelPendingWork()
-                if (MinecraftLaunchSessionStore.current()?.accountType == MinecraftAccountType.MICROSOFT) {
-                    MinecraftLaunchSessionStore.clear()
-                }
-                currentChallenge = null
-                codeText.text = "Code appears here"
-                urlText.text = "Then open the verification page and enter it."
-                openBrowserButton.isEnabled = false
-                copyCodeButton.isEnabled = false
-                refreshAccountState()
-                Toast.makeText(this@MicrosoftLoginActivity, "Signed out.", Toast.LENGTH_SHORT).show()
-            }
-        }
-        content.addView(signOutButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        root.addView(scroll, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.ime())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        return root
-    }
-
-    private fun beginSignIn() {
-        val clientId = clientIdInput.text?.toString()?.trim().orEmpty()
+    private fun beginSignIn(rawClientId: String) {
+        val clientId = rawClientId.trim()
         val validation = authenticator.validateClientId(clientId)
         if (validation != null) {
-            clientIdInput.error = validation
+            uiState = uiState.copy(clientIdError = validation, status = validation)
             return
         }
-        clientIdInput.error = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_CLIENT_ID, clientId).apply()
         cancelPendingWork()
         val cancellation = AtomicBoolean(false)
         currentCancellation = cancellation
         completed = false
         currentChallenge = null
-        codeText.text = "Requesting code…"
-        urlText.text = ""
-        statusText.text = "Contacting Microsoft sign-in…"
-        setBusy(true)
+        uiState = uiState.copy(
+            clientId = clientId,
+            clientIdError = null,
+            code = "Requesting code…",
+            verificationMessage = "",
+            status = "Contacting Microsoft sign-in…",
+            busy = true,
+            browserEnabled = false,
+            copyEnabled = false,
+            signOutEnabled = false,
+        )
         activeFuture = worker.submit {
             try {
                 val challenge = authenticator.requestDeviceCode(clientId)
                 currentChallenge = challenge
                 mainHandler.post {
                     if (isFinishing || isDestroyed || cancellation.get()) return@post
-                    codeText.text = challenge.userCode
-                    urlText.text = "Open ${challenge.verificationUri} and enter the code. Expires in ~${challenge.expiresInSeconds / 60} min."
-                    openBrowserButton.isEnabled = true
-                    copyCodeButton.isEnabled = true
-                    statusText.text = "Waiting for Microsoft authorization…"
+                    uiState = uiState.copy(
+                        code = challenge.userCode,
+                        verificationMessage = "Open ${challenge.verificationUri} and enter the code above. Code expires in about ${challenge.expiresInSeconds / 60} minute(s).",
+                        browserEnabled = true,
+                        copyEnabled = true,
+                        status = "Waiting for Microsoft authorization…",
+                    )
                 }
                 val session = authenticator.completeSignIn(
                     clientId = clientId,
@@ -234,7 +147,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
                     isCancelled = { cancellation.get() || Thread.currentThread().isInterrupted },
                     onStatus = { message ->
                         mainHandler.post {
-                            if (!isFinishing && !isDestroyed && !cancellation.get()) statusText.text = message
+                            if (!isFinishing && !isDestroyed && !cancellation.get()) uiState = uiState.copy(status = message.take(500))
                         }
                     },
                 )
@@ -244,7 +157,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
                 completed = true
                 mainHandler.post {
                     if (isFinishing || isDestroyed) return@post
-                    statusText.text = "Signed in as ${session.username}"
+                    uiState = uiState.copy(status = "Signed in as ${session.username}. The access token is held in memory only.", busy = false)
                     Toast.makeText(this, "Signed in as ${session.username}", Toast.LENGTH_LONG).show()
                     setResult(Activity.RESULT_OK)
                     finish()
@@ -253,17 +166,18 @@ class MicrosoftLoginActivity : AppCompatActivity() {
                 Thread.currentThread().interrupt()
                 mainHandler.post {
                     if (!isFinishing && !isDestroyed && cancellation.get()) {
-                        statusText.text = "Sign-in cancelled."
-                        setBusy(false)
+                        uiState = uiState.copy(status = "Sign-in cancelled.", busy = false, browserEnabled = currentChallenge != null, copyEnabled = currentChallenge != null)
                     }
                 }
             } catch (error: Exception) {
                 mainHandler.post {
                     if (isFinishing || isDestroyed || cancellation.get()) return@post
-                    statusText.text = error.message?.take(500) ?: "Sign-in failed. Check the app registration and network connection."
-                    setBusy(false)
-                    openBrowserButton.isEnabled = currentChallenge != null
-                    copyCodeButton.isEnabled = currentChallenge != null
+                    uiState = uiState.copy(
+                        status = error.message?.take(500) ?: "Sign-in failed. Check the app registration and network connection.",
+                        busy = false,
+                        browserEnabled = currentChallenge != null,
+                        copyEnabled = currentChallenge != null,
+                    )
                 }
             }
         }
@@ -289,10 +203,22 @@ class MicrosoftLoginActivity : AppCompatActivity() {
 
     private fun cancelSignInByUser() {
         cancelPendingWork()
-        statusText.text = "Sign-in cancelled."
-        setBusy(false)
-        openBrowserButton.isEnabled = currentChallenge != null
-        copyCodeButton.isEnabled = currentChallenge != null
+        uiState = uiState.copy(status = "Sign-in cancelled.", busy = false, browserEnabled = currentChallenge != null, copyEnabled = currentChallenge != null)
+    }
+
+    private fun signOut() {
+        cancelPendingWork()
+        if (MinecraftLaunchSessionStore.current()?.accountType == MinecraftAccountType.MICROSOFT) MinecraftLaunchSessionStore.clear()
+        currentChallenge = null
+        uiState = uiState.copy(
+            code = "Sign-in code will appear here",
+            verificationMessage = "Open the official verification page when a code is provided.",
+            browserEnabled = false,
+            copyEnabled = false,
+            busy = false,
+        )
+        refreshAccountState()
+        Toast.makeText(this, "Signed out. The session was cleared from memory.", Toast.LENGTH_SHORT).show()
     }
 
     private fun cancelPendingWork() {
@@ -301,49 +227,123 @@ class MicrosoftLoginActivity : AppCompatActivity() {
         activeFuture = null
     }
 
-    private fun setBusy(busy: Boolean) {
-        startButton.isEnabled = !busy
-        clientIdInput.isEnabled = !busy
-        cancelButton.isEnabled = busy
-        signOutButton.isEnabled = !busy && MinecraftLaunchSessionStore.current()?.accountType == MinecraftAccountType.MICROSOFT
-    }
-
     private fun refreshAccountState() {
         val session = MinecraftLaunchSessionStore.current()
         val issue = session?.validationError()
         if (session == null || issue != null) {
             if (issue != null) MinecraftLaunchSessionStore.clear()
-            statusText.text = issue ?: "Not signed in to Microsoft."
-            signOutButton.isEnabled = false
+            uiState = uiState.copy(status = issue ?: "Not signed in to Microsoft.", signOutEnabled = false)
         } else if (session.accountType == MinecraftAccountType.LOCAL) {
-            statusText.text = "Offline account ${session.username} is active. Signing in will switch to Microsoft."
-            signOutButton.isEnabled = false
+            uiState = uiState.copy(status = "Local account ${session.username} is currently active. Signing in here will switch to a Microsoft account.", signOutEnabled = false)
         } else {
-            statusText.text = "Signed in as ${session.username}"
-            signOutButton.isEnabled = true
+            uiState = uiState.copy(status = "Signed in as ${session.username} · Microsoft account. Token held in memory only.", signOutEnabled = true)
         }
     }
-
-    private fun label(text: String, size: Float, bold: Boolean, foreground: Int): TextView = TextView(this).apply {
-        this.text = text
-        textSize = size
-        setTextColor(foreground)
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-        includeFontPadding = true
-    }
-
-    private fun gap(parent: LinearLayout, height: Int) {
-        parent.addView(View(this), LinearLayout.LayoutParams(1, dp(height)))
-    }
-
-    private fun color(attribute: Int): Int = android.util.TypedValue().let { value ->
-        if (theme.resolveAttribute(attribute, value, true)) value.data else android.graphics.Color.BLACK
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private companion object {
         const val PREFS = "microsoft_auth_settings"
         const val KEY_CLIENT_ID = "microsoft_oauth_client_id"
+    }
+}
+
+private data class MicrosoftSignInUiState(
+    val clientId: String = "",
+    val clientIdError: String? = null,
+    val code: String = "Sign-in code will appear here",
+    val verificationMessage: String = "Open the official verification page when a code is provided.",
+    val status: String = "Not signed in to Microsoft.",
+    val busy: Boolean = false,
+    val browserEnabled: Boolean = false,
+    val copyEnabled: Boolean = false,
+    val signOutEnabled: Boolean = false,
+)
+
+@Composable
+private fun MicrosoftSignInScreen(
+    state: MicrosoftSignInUiState,
+    onClientIdChange: (String) -> Unit,
+    onBegin: () -> Unit,
+    onOpenBrowser: () -> Unit,
+    onCopyCode: () -> Unit,
+    onCancel: () -> Unit,
+    onSignOut: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) { Icon(Icons.Outlined.ArrowBack, "Back") }
+                    Column(Modifier.weight(1f)) {
+                        Text("SALLY LAUNCHER · ACCOUNT", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text("Microsoft sign-in", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            item {
+                Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.Security, null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Official device-code flow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Sign-in happens on Microsoft's website. Sally never asks for your Microsoft password and does not save access or refresh tokens to disk.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+            item {
+                OutlinedCard(shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("App registration", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Enter an Application (client) ID GUID for a Microsoft Entra app configured for personal Microsoft accounts and public-client/device-code sign-in. Do not enter a client secret. Minecraft Services may require app access approval.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(
+                            value = state.clientId,
+                            onValueChange = onClientIdChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            enabled = !state.busy,
+                            isError = state.clientIdError != null,
+                            label = { Text("Application (client) ID") },
+                            supportingText = { if (state.clientIdError != null) Text(state.clientIdError) else Text("Client ID only · no client secret") },
+                            leadingIcon = { Icon(Icons.Outlined.VpnKey, null) },
+                        )
+                        Button(onClick = onBegin, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                            if (state.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.Security, null)
+                            Spacer(Modifier.width(8.dp)); Text(if (state.busy) "Waiting for authorization…" else "Request sign-in code")
+                        }
+                    }
+                }
+            }
+            item {
+                OutlinedCard(shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Your device code", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(state.code, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(state.verificationMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FilledTonalButton(onClick = onOpenBrowser, enabled = state.browserEnabled, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.OpenInBrowser, null); Spacer(Modifier.width(8.dp)); Text("Open Microsoft verification page")
+                        }
+                        OutlinedButton(onClick = onCopyCode, enabled = state.copyEnabled, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Copy sign-in code")
+                        }
+                        if (state.busy) OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel sign-in") }
+                    }
+                }
+            }
+            item {
+                OutlinedCard(shape = RoundedCornerShape(22.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                        Icon(if (state.signOutEnabled) Icons.Outlined.CheckCircle else Icons.Outlined.AccountCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Authentication status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(state.status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(onClick = onSignOut, enabled = state.signOutEnabled && !state.busy) { Text("Sign out Microsoft") }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -11,7 +11,6 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
-import com.google.android.material.button.MaterialButton
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -80,7 +79,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         infoView = TextView(this).apply {
             textSize = 13f
             setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0xE607071A.toInt())
+            setBackgroundColor(0xCC101923.toInt())
             setPadding(dp(16), dp(12), dp(16), dp(12))
             text = initialStatus()
             contentDescription = "Native engine diagnostics and input event counter"
@@ -91,7 +90,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             android.view.Gravity.TOP,
         ))
 
-        captureButton = MaterialButton(this).apply {
+        captureButton = Button(this).apply {
             text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) "Capture mouse" else "Mouse capture needs Android 8+"
             isEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             setOnClickListener { togglePointerCapture() }
@@ -370,7 +369,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES20.glClearColor(0.027f, 0.027f, 0.102f, 1f)
+        GLES20.glClearColor(0.035f, 0.055f, 0.085f, 1f)
         val vertexShader = try {
             compileShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
         } catch (error: Exception) {

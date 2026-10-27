@@ -98,7 +98,7 @@ class PojavGameActivity : AppCompatActivity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(0xE607071A.toInt())
+            setBackgroundColor(0xD91B2430.toInt())
         }
         statusText = TextView(this).apply {
             textSize = 13f

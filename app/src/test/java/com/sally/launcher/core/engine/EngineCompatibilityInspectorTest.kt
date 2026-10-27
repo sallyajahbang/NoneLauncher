@@ -53,7 +53,7 @@ class EngineCompatibilityInspectorTest {
         val root = createTempDir(prefix = "sally-engine-awt-version-")
         try {
             val runtime = File(root, "runtime").apply { mkdirs() }
-            File(runtime, "release").writeText("OS_ARCH=\"aarch64\"\nJAVA_VERSION=\"21\"\n")
+            File(runtime, "release").writeText("OS_ARCH=\"aarch64\"\nJAVA_VERSION=\"22\"\n")
             File(runtime, "bin").mkdirs()
             File(runtime, "bin/java").writeText("test")
             File(runtime, "lib/server").mkdirs()
@@ -73,7 +73,7 @@ class EngineCompatibilityInspectorTest {
                 deviceArchitecture = "aarch64",
             )
 
-            assertTrue(report.blockers.any { it.contains("supports Java 8 and 17 only") })
+            assertTrue(report.blockers.any { it.contains("supports Java 8, 17, 21, and 25 only") })
         } finally {
             root.deleteRecursively()
         }

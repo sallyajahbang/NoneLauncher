@@ -1,13 +1,6 @@
 <resources>
-    <color name="cosmic_void">#07071A</color>
-    <color name="cosmic_deep">#0E0E2C</color>
-    <color name="cosmic_surface">#16163A</color>
-    <color name="cosmic_surface_high">#1F1F4A</color>
-    <color name="cosmic_outline">#2E2E66</color>
-    <color name="cosmic_violet">#9D8CFF</color>
-    <color name="cosmic_violet_dark">#5B47D6</color>
-    <color name="cosmic_cyan">#6FE3F0</color>
-    <color name="cosmic_text">#ECEBFF</color>
-    <color name="cosmic_text_dim">#9A9AC4</color>
-    <color name="cosmic_error">#FF8FA3</color>
+    <color name="sally_primary">#5269B5</color>
+    <color name="sally_primary_dark">#B8C6FF</color>
+    <color name="sally_secondary">#526477</color>
+    <color name="sally_secondary_dark">#B9C9E0</color>
 </resources>

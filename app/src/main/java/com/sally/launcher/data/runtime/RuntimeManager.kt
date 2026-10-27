@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.StatFs
 import android.system.Os
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.download.ResilientDownloader
 import com.sally.launcher.data.storage.LauncherStorage
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -50,22 +51,31 @@ class RuntimeManager(context: Context) {
      * Resolve the Java requirement from Mojang's own version JSON and install the closest
      * supported runtime at or above that required major version.
      */
-    fun installForVersion(version: MinecraftVersion, onProgress: (String) -> Unit): RuntimeInfo {
+    fun installForVersion(
+        version: MinecraftVersion,
+        forceRedownload: Boolean = false,
+        resumeRedownload: Boolean = false,
+        onProgress: (String) -> Unit,
+    ): RuntimeInfo {
         onProgress("Checking Java requirement for Minecraft ${version.id}…")
         val requiredMajor = resolveRequiredJavaMajor(version)
         val architecture = currentRuntimeArchitecture()
         val chosenMajor = supportedJavaMajors(architecture).firstOrNull { it >= requiredMajor }
             ?: throw IOException(
-                "Minecraft ${version.id} requires Java $requiredMajor, but this launcher build only supports Java 8 and 17 " +
+                "Minecraft ${version.id} requires Java $requiredMajor, but this launcher build only supports Java ${supportedJavaMajors(architecture).joinToString("/")} " +
                     "with its current Caciocavallo/AWT toolkit on Android $architecture."
             )
         if (chosenMajor != requiredMajor) {
             onProgress("Minecraft requires Java $requiredMajor; using compatible Java $chosenMajor…")
         }
-        return installRuntime(chosenMajor, onProgress)
+        return installRuntime(chosenMajor, forceRedownload, resumeRedownload, onProgress)
     }
 
     fun supportedJavaMajors(): List<Int> = supportedJavaMajors(currentRuntimeArchitecture())
+
+    /** Install a specific supported major chosen from Setting/Java, without a Minecraft version. */
+    fun installMajor(major: Int, onProgress: (String) -> Unit): RuntimeInfo =
+        installRuntime(major, forceRedownload = false, resumeRedownload = false, onProgress = onProgress)
 
     fun installedRuntimes(): List<RuntimeInfo> {
         if (!runtimesRoot.isDirectory) return emptyList()
@@ -109,14 +119,16 @@ class RuntimeManager(context: Context) {
         return declaredMajor.takeIf { it in 1..99 } ?: 8
     }
 
-    private fun installRuntime(major: Int, onProgress: (String) -> Unit): RuntimeInfo {
+    private fun installRuntime(major: Int, forceRedownload: Boolean, resumeRedownload: Boolean, onProgress: (String) -> Unit): RuntimeInfo {
         val architecture = currentRuntimeArchitecture()
         if (major !in supportedJavaMajors(architecture)) {
             throw IOException("Java $major is not available for Android $architecture from the configured runtime source")
         }
-        readAndValidateRuntime(File(runtimesRoot, "java-$major"), major)?.let { installed ->
-            onProgress("Java $major is already installed and verified")
-            return installed
+        if (!forceRedownload) {
+            readAndValidateRuntime(File(runtimesRoot, "java-$major"), major)?.let { installed ->
+                onProgress("Java $major is already installed and verified")
+                return installed
+            }
         }
 
         ensureDirectory(minecraftRoot)
@@ -130,12 +142,14 @@ class RuntimeManager(context: Context) {
         val staging = File(runtimesRoot, ".java-$major.installing")
         val destination = File(runtimesRoot, "java-$major")
         val backup = File(runtimesRoot, ".java-$major.previous")
+        var runtimeInstalled = false
+        var previousMovedToBackup = false
 
         try {
-            if (!isValidArchive(archive, asset)) {
-                archive.delete()
-                part.delete()
-                onProgress("Downloading Java $major runtime…")
+            if (forceRedownload || !isValidArchive(archive, asset)) {
+                if (archive.exists()) archive.delete()
+                if (forceRedownload && !resumeRedownload) part.delete()
+                onProgress(if (forceRedownload) "Redownloading Java $major runtime…" else "Downloading Java $major runtime…")
                 downloadArchive(asset, part, onProgress)
                 if (!part.renameTo(archive)) {
                     part.copyTo(archive, overwrite = true)
@@ -154,23 +168,37 @@ class RuntimeManager(context: Context) {
             }
 
             backup.deleteRecursively()
-            if (destination.exists() && !destination.renameTo(backup)) {
-                throw IOException("Could not move the previous Java $major runtime out of the way")
+            if (destination.exists()) {
+                if (!destination.renameTo(backup)) {
+                    throw IOException("Could not move the previous Java $major runtime out of the way")
+                }
+                previousMovedToBackup = true
             }
             if (!staging.renameTo(destination)) {
                 if (backup.exists()) backup.renameTo(destination)
                 throw IOException("Could not activate the installed Java $major runtime")
             }
+            val finalRuntime = readAndValidateRuntime(destination, major)
+                ?: throw IOException("Java $major runtime failed its final integrity check")
+            runtimeInstalled = true
             backup.deleteRecursively()
             onProgress("Java $major runtime installed and verified")
-            return readAndValidateRuntime(destination, major)
-                ?: throw IOException("Java $major runtime failed its final integrity check")
+            return finalRuntime
         } finally {
-            part.delete()
-            archive.delete()
+            if (runtimeInstalled) {
+                part.delete()
+                archive.delete()
+                backup.deleteRecursively()
+            } else {
+                // If final validation failed after activation, put the previous runtime back.
+                if (previousMovedToBackup && backup.exists()) {
+                    if (destination.exists()) destination.deleteRecursively()
+                    backup.renameTo(destination)
+                }
+                if (archive.exists() && !isValidArchive(archive, asset)) archive.delete()
+            }
+            // Keep the partial archive after a network failure so the next manual retry can resume.
             staging.deleteRecursively()
-            // Keep a backup only if moving the previous runtime back failed.
-            if (destination.exists()) backup.deleteRecursively()
         }
     }
 
@@ -211,51 +239,19 @@ class RuntimeManager(context: Context) {
     }
 
     private fun downloadArchive(asset: RuntimeAsset, destination: File, onProgress: (String) -> Unit) {
-        var connection: HttpURLConnection? = null
-        try {
-            connection = (URL(asset.url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 20_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "SallyLauncher/0.4.0 (Android)")
-                setRequestProperty("Accept", "application/octet-stream")
-            }
-            val status = connection.responseCode
-            if (status !in 200..299) throw IOException("Runtime download returned HTTP $status")
-            val total = connection.contentLengthLong
-            if (total > MAX_ARCHIVE_BYTES) throw IOException("Runtime archive is unexpectedly large")
-            var downloaded = 0L
-            val digest = MessageDigest.getInstance("SHA-256")
-            BufferedInputStream(connection.inputStream).use { input ->
-                FileOutputStream(destination).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        downloaded += count
-                        if (downloaded > MAX_ARCHIVE_BYTES) throw IOException("Runtime download exceeded the size limit")
-                        output.write(buffer, 0, count)
-                        digest.update(buffer, 0, count)
-                        if (downloaded % (1024 * 1024) < count) {
-                            onProgress("Downloading Java ${asset.majorVersion}: ${downloaded / (1024 * 1024)} MB")
-                        }
-                    }
-                    output.fd.sync()
-                }
-            }
-            if (downloaded != asset.size) throw IOException("Runtime archive size mismatch")
-            val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            if (!actual.equals(asset.sha256, ignoreCase = true)) {
-                throw IOException("SHA-256 verification failed for Java ${asset.majorVersion}; archive rejected")
-            }
-        } catch (e: Exception) {
-            destination.delete()
-            if (e is IOException) throw e
-            throw IOException("Runtime download failed: ${e.message ?: e.javaClass.simpleName}", e)
-        } finally {
-            connection?.disconnect()
-        }
+        ResilientDownloader.download(
+            urlString = asset.url,
+            destination = destination,
+            expectedSize = asset.size,
+            expectedDigest = asset.sha256,
+            digestAlgorithm = "SHA-256",
+            maximumBytes = MAX_ARCHIVE_BYTES,
+            onProgress = { downloaded, total ->
+                val totalLabel = if (total > 0L) " / ${total / (1024 * 1024)} MB" else ""
+                onProgress("Downloading Java ${asset.majorVersion}: ${downloaded / (1024 * 1024)} MB$totalLabel")
+            },
+            onStatus = onProgress,
+        )
     }
 
     private fun extractTarXz(archive: File, staging: File, onProgress: (String) -> Unit) {
@@ -463,9 +459,11 @@ class RuntimeManager(context: Context) {
     }
 
     private fun supportedJavaMajors(architecture: String): List<Int> = when (architecture) {
-        // The bundled upstream Caciocavallo AWT toolkit supports Java 8 and 17 only.
-        // Newer JVMs must not be offered until a compatible toolkit/native bridge is bundled.
-        "arm", "arm64", "x86", "x86_64" -> listOf(8, 17)
+        // Caciocavallo17 (cacio-tta) is shared by Java 9+ and works on Java 21/25, the same
+        // setup Amethyst uses. Java 21+ is offered on arm/arm64 only, because x86 builds are
+        // not provided for 21+ (matches Amethyst).
+        "arm", "arm64" -> listOf(8, 17, 21, 25)
+        "x86", "x86_64" -> listOf(8, 17)
         else -> emptyList()
     }
 
@@ -524,27 +522,50 @@ class RuntimeManager(context: Context) {
         val parsed = runCatching { URL(urlString) }.getOrNull()
         if (parsed?.protocol != "https") throw IOException("Rejected non-HTTPS $label URL")
         if (githubApi && parsed.host != "api.github.com") throw IOException("Rejected non-GitHub runtime metadata URL")
-        var connection: HttpURLConnection? = null
-        try {
-            connection = (parsed.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 25_000
-                instanceFollowRedirects = false
-                setRequestProperty("User-Agent", "SallyLauncher/0.4.0 (Android)")
-                setRequestProperty("Accept", if (githubApi) "application/vnd.github+json" else "application/json")
-                if (githubApi) setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+
+        val retryDelays = longArrayOf(700L, 1_400L, 2_800L)
+        var lastError: Exception? = null
+        for (attempt in 1..4) {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (parsed.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15_000
+                    readTimeout = 25_000
+                    instanceFollowRedirects = false
+                    useCaches = false
+                    setRequestProperty("Accept-Encoding", "identity")
+                    setRequestProperty("User-Agent", "SallyLauncher/0.5.0 (Android)")
+                    setRequestProperty("Accept", if (githubApi) "application/vnd.github+json" else "application/json")
+                    if (githubApi) setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                }
+                val code = connection.responseCode
+                if (code !in 200..299) throw IOException("$label returned HTTP $code")
+                val length = connection.contentLengthLong
+                if (length > MAX_METADATA_BYTES) throw IOException("$label is unexpectedly large")
+                val content = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                if (content.toByteArray(Charsets.UTF_8).size > MAX_METADATA_BYTES) throw IOException("$label is unexpectedly large")
+                return content
+            } catch (error: Exception) {
+                lastError = error
+                val httpCode = Regex("HTTP (\\d{3})").find(error.message.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
+                val retryableHttp = httpCode == 408 || httpCode == 425 || httpCode == 429 || httpCode in 500..599
+                val permanent = error.message.orEmpty().contains("unexpectedly large", ignoreCase = true)
+                val retryable = !permanent && (if (httpCode != null) retryableHttp else error is IOException)
+                if (attempt == 4 || !retryable) {
+                    throw IOException("Could not fetch $label after $attempt attempt(s): ${error.message ?: error.javaClass.simpleName}", error)
+                }
+            } finally {
+                connection?.disconnect()
             }
-            val code = connection.responseCode
-            if (code !in 200..299) throw IOException("$label returned HTTP $code")
-            val length = connection.contentLengthLong
-            if (length > MAX_METADATA_BYTES) throw IOException("$label is unexpectedly large")
-            val content = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            if (content.toByteArray(Charsets.UTF_8).size > MAX_METADATA_BYTES) throw IOException("$label is unexpectedly large")
-            return content
-        } finally {
-            connection?.disconnect()
+            try {
+                Thread.sleep(retryDelays[(attempt - 1).coerceAtMost(retryDelays.lastIndex)])
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("$label retry was cancelled", interrupted)
+            }
         }
+        throw IOException("Could not fetch $label", lastError)
     }
 
     private fun ensureSufficientStorage(directory: File) {

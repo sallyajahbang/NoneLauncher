@@ -1,9 +1,5 @@
 # Sally Launcher — Stage 16
 
-## UI redesign (2026-10-28)
-
-Home is now a single Cosmic-themed screen (dark, minimal, static starfield) with a splash screen. Two dropdowns pick the **account** (offline accounts, Microsoft, "+ Offline account" popup, ✕ to remove) and the **version** (releases by default, toggle for snapshots/old). **Play** installs any missing version files and Java runtime, then starts the game. Developer tools (refresh, Java self-test, graphics/Pojav bridge tests) live in the ⋮ menu. `LocalAccountActivity` was removed in favour of the popup. Not compiled here — verify with the CI build.
-
 Sally Launcher is an Android Minecraft: Java Edition launcher project using Kotlin, AndroidX and a Material 3-style interface. Its current foundation includes an official version catalog, version-file and asset downloads, an Android Java runtime installer, launch-profile resolution, the Pojav-derived Android GLFW/LWJGL bridge, input/surface diagnostics, and a native JLI launch adapter.
 
 ## Stage 16 — native JLI launch adapter
@@ -39,3 +35,19 @@ APK path: `app/build/outputs/apk/debug/app-debug.apk`.
 The current source includes a more complete Pojav-compatible runtime payload: Java 8 and Java 17 Caciocavallo assets, native AWT/GLFW bridges, exit hooks, and stricter launch-time compatibility checks. The runtime installer refuses Java versions that do not match the bundled AWT toolkit and checks the patched GLFW classes by SHA-256 before launch. The CMake port also mirrors the arm64 Adreno compile definition from upstream Pojav's `Android.mk`.
 
 These are source-level repairs, not a verified release APK. The first CI log showed that ByteHook 1.1.2 / ShadowHook 2.0.1 require compileSdk 37; the attempted SDK 37 workaround then failed because GitHub Actions' `sdkmanager` could not find `platforms;android-37`. The current source therefore returns to the known SDK 35 / AGP 8.7.3 / Gradle 8.9 toolchain and pins ByteHook to 1.1.1 (with ShadowHook 1.1.1 transitively). A fresh CI run is still required; this workspace cannot download Gradle from `services.gradle.org` or perform a full Android build. CMake configure, the host-side `awt_bridge.c` syntax check, and compilation of `AWTInputBridge.java` passed previously. Before distributing the launcher, run the project CI build and test on Android hardware; a real crash root cause can only be confirmed against the device's `logcat` and `latest.log`. See `docs/FIXES_CRASH_ANALYSIS.md`.
+
+## Material 3 UI refresh
+
+The launcher, local-profile manager, and Microsoft device-code sign-in screens now use Jetpack Compose + Material 3. It includes Play, Versions, Account, Settings, and DEV tabs. Version channels are separated, installed versions are grouped by channel, and Play provides a searchable picker restricted to installed versions. See `docs/COMPOSE_MD3_UI_REDESIGN.md` for the change overview and validation status.
+
+
+## Download reliability (retry, resume, and redownload)
+
+- Dependency downloads use six parallel workers and 128 KiB streaming buffers.
+- Transient HTTP/network failures retry up to four attempts with backoff.
+- Verified downloads resume `.part` files with HTTP Range when the server supports it; checksum/size validation is required before promotion to the final path.
+- If a dependency fails after retries, remaining queued/in-flight downloads are stopped and partial files are preserved for manual retry.
+- The Version Manager provides **Redownload** for installed Minecraft versions, with a confirmation warning because shared assets may be fetched again.
+- The Play runtime card provides **Redownload Java runtime**; the prior runtime is retained until the replacement passes validation.
+- A failure dialog offers **Retry** and **Redownload**. Runtime Retry after a forced redownload continues the forced operation and can resume its partial archive rather than short-circuiting to the old runtime.
+
