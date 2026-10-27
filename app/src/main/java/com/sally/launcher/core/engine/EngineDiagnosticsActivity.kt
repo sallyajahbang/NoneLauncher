@@ -2,12 +2,14 @@ package com.sally.launcher.core.engine
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -25,8 +27,10 @@ import kotlin.math.max
 class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var glView: GLSurfaceView
     private lateinit var infoView: TextView
+    private lateinit var captureButton: Button
     private val inputTranslator = AndroidInputTranslator()
     private val activeTouchPointers = LinkedHashSet<Int>()
+    private var captureEscapeHandled = false
 
     @Volatile private var pointerX = 0f
     @Volatile private var pointerY = 0f
@@ -74,6 +78,41 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.TOP,
         ))
+
+        captureButton = Button(this).apply {
+            text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) "Capture mouse" else "Mouse capture needs Android 8+"
+            isEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            setOnClickListener { togglePointerCapture() }
+            contentDescription = "Capture or release the physical mouse pointer for relative movement testing"
+        }
+        val captureParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM or android.view.Gravity.END,
+        ).apply {
+            val margin = dp(12)
+            setMargins(margin, margin, margin, margin)
+        }
+        root.addView(captureButton, captureParams)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            glView.setOnCapturedPointerListener { _, event -> handleCapturedPointer(event) }
+            glView.setOnPointerCaptureChangeListener { _, hasCapture ->
+                if (::captureButton.isInitialized) {
+                    captureButton.text = if (hasCapture) "Release mouse" else "Capture mouse"
+                }
+                NativeEngineBridge.sendInput(
+                    NativeEngineBridge.EVENT_CURSOR_CAPTURE,
+                    0,
+                    if (hasCapture) GlfwInputMapping.PRESS else GlfwInputMapping.RELEASE,
+                    0f,
+                    0f,
+                    0f,
+                )
+                infoView.text = statusWithEvents()
+            }
+        }
+
         setContentView(root)
         glView.requestFocus()
     }
@@ -84,6 +123,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onPause() {
+        releasePointerCaptureIfHeld()
         releaseTrackedInput()
         if (::glView.isInitialized) glView.onPause()
         super.onPause()
@@ -91,10 +131,15 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) releaseTrackedInput()
+        if (!hasFocus) {
+            releasePointerCaptureIfHeld()
+            releaseTrackedInput()
+        }
     }
 
     override fun onDestroy() {
+        releasePointerCaptureIfHeld()
+        releaseTrackedInput()
         if (::glView.isInitialized) glView.queueEvent {
             if (program != 0) GLES20.glDeleteProgram(program)
             program = 0
@@ -103,6 +148,19 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && captureEscapeHandled) {
+            if (event.action == KeyEvent.ACTION_UP) captureEscapeHandled = false
+            return true
+        }
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            ::glView.isInitialized && glView.hasPointerCapture()) {
+            captureEscapeHandled = true
+            glView.releasePointerCapture()
+            inputTranslator.releaseAll()
+            return true
+        }
         val systemKey = event.keyCode == KeyEvent.KEYCODE_BACK ||
             event.keyCode == KeyEvent.KEYCODE_HOME ||
             event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
@@ -169,6 +227,73 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun releaseTrackedInput() {
         inputTranslator.releaseAll()
         releaseTouchPointers()
+    }
+
+    private fun togglePointerCapture() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !::glView.isInitialized) {
+            return
+        }
+        if (glView.hasPointerCapture()) {
+            glView.releasePointerCapture()
+        } else {
+            glView.requestFocus()
+            // Pointer capture requires a focused view hierarchy; run after focus has settled.
+            glView.post {
+                if (glView.hasWindowFocus() && glView.hasFocus()) {
+                    glView.requestPointerCapture()
+                } else {
+                    infoView.text = initialStatus() + "\n\nCould not capture mouse: the game surface has not received focus. Tap Capture mouse again."
+                }
+            }
+        }
+    }
+
+    private fun releasePointerCaptureIfHeld() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            ::glView.isInitialized && glView.hasPointerCapture()) {
+            glView.releasePointerCapture()
+        }
+    }
+
+    /** Captured mouse motion is relative; do not feed its deltas to the absolute-position path. */
+    private fun handleCapturedPointer(event: MotionEvent): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                // Relative axes are per-sample, not accumulated. Preserve every history sample
+                // or high-rate mice can lose movement when Android batches MotionEvents.
+                for (historyIndex in 0 until event.historySize) {
+                    sendRelativePointerDelta(
+                        event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, 0, historyIndex),
+                        event.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, 0, historyIndex),
+                    )
+                }
+                sendRelativePointerDelta(
+                    event.getAxisValue(MotionEvent.AXIS_RELATIVE_X),
+                    event.getAxisValue(MotionEvent.AXIS_RELATIVE_Y),
+                )
+                return true
+            }
+            MotionEvent.ACTION_BUTTON_PRESS,
+            MotionEvent.ACTION_BUTTON_RELEASE,
+            MotionEvent.ACTION_SCROLL,
+            MotionEvent.ACTION_HOVER_MOVE -> return handleGenericMotion(event)
+        }
+        return false
+    }
+
+    private fun sendRelativePointerDelta(dx: Float, dy: Float) {
+        NativeEngineBridge.sendInput(
+            NativeEngineBridge.EVENT_POINTER_MOVE,
+            0,
+            GlfwInputMapping.RELATIVE_MOVE,
+            dx,
+            dy,
+            0f,
+        )
+        pointerX = (pointerX + dx / max(1, glView.width).toFloat()).coerceIn(0f, 1f)
+        pointerY = (pointerY + dy / max(1, glView.height).toFloat()).coerceIn(0f, 1f)
+        hasPointer = true
     }
 
     private fun handleGenericMotion(event: MotionEvent): Boolean {

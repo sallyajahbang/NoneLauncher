@@ -54,7 +54,7 @@ jboolean enqueue(const InputEvent& event) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_sally_launcher_core_engine_NativeEngineBridge_nativeBridgeVersion(
     JNIEnv* env, jobject /* thiz */) {
-    return env->NewStringUTF("Sally Native Input Bridge 1.0");
+    return env->NewStringUTF("Sally Native Input Bridge 1.1 (relative pointer capture)");
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

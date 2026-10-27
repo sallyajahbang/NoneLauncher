@@ -11,6 +11,8 @@ object GlfwInputMapping {
     const val PRESS = 1
     const val REPEAT = 2
     const val MOVE = 2
+    /** Event action used when MotionEvent coordinates carry relative pointer deltas. */
+    const val RELATIVE_MOVE = 3
 
     // GLFW key values follow the GLFW 3 public header.
     fun key(androidKeyCode: Int): Int = when (androidKeyCode) {

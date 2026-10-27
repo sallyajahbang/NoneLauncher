@@ -75,8 +75,20 @@ jobs:
           test -d "$ANDROID_SDK_ROOT/cmake/3.22.1"
           ./gradlew --version
 
+      - name: Run input mapping unit tests
+        run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
+
       - name: Build APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Upload build and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sally-launcher-build-reports
+          path: app/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
