@@ -217,10 +217,14 @@ class LaunchProfileBuilder(context: Context) {
         for (i in 0 until libraries.length()) {
             val library = libraries.optJSONObject(i) ?: continue
             if (!rulesAllow(library.optJSONArray("rules"))) continue
-            val artifact = library.optJSONObject("downloads")?.optJSONObject("artifact")
+            val downloads = library.optJSONObject("downloads")
+            val artifact = downloads?.optJSONObject("artifact")
+            // Native-only entries (a `natives` map, or downloads that list only classifiers) are not Java
+            // classpath entries. The installer never fetches their base JAR, so skip them here too.
+            if (artifact == null && (downloads != null || library.has("natives"))) continue
             val relativePath = artifact?.optString("path")?.takeIf { it.isNotBlank() }
                 ?: mavenPath(library.optString("name"))
-                ?: continue // Classifier-only entries are native payloads, not Java classpath entries.
+                ?: continue // Classifier-only coordinates are native payloads, not Java classpath entries.
             val safePath = safeRelativePath(relativePath) ?: throw IOException("Unsafe library path in version metadata")
             val file = File(librariesRoot, safePath)
             val canonicalRoot = librariesRoot.canonicalFile

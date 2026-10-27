@@ -127,6 +127,8 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
             modifier = Modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
+            // Fullscreen: the system bars are hidden, so do not reserve space for them.
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = { if (!wide) LauncherBottomBar(state, actions) },
         ) { padding ->
             Row(Modifier.fillMaxSize().padding(padding)) {
