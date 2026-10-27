@@ -1,4 +1,7 @@
 <resources>
     <color name="sally_primary">#A44A00</color>
     <color name="sally_background">#FFF8F5</color>
+    <!-- Kept so a stale drawable/bg_launcher.xml from an older copy still resolves. Unused by the current theme. -->
+    <color name="sally_background_top">#FFF8F5</color>
+    <color name="sally_background_bottom">#FFF8F5</color>
 </resources>
