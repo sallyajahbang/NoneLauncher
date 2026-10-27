@@ -67,7 +67,7 @@ class LocalAccountActivity : AppCompatActivity() {
             isHintEnabled = true
         }
         nameInput = TextInputEditText(inputLayout.context).apply {
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             filters = arrayOf(android.text.InputFilter.LengthFilter(16))
         }

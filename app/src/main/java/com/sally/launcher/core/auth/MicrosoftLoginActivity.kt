@@ -108,7 +108,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         clientIdInput = TextInputEditText(inputLayout.context).apply {
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT
             setTextIsSelectable(true)
         }
@@ -124,11 +124,11 @@ class MicrosoftLoginActivity : AppCompatActivity() {
         content.addView(startButton)
         gap(content, 8)
         codeText = label("Sign-in code will appear here", 26f, true, color(com.google.android.material.R.attr.colorOnSurface))
-        codeText.textIsSelectable = true
+        codeText.setTextIsSelectable(true)
         content.addView(codeText)
         gap(content, 4)
         urlText = label("Open the official verification page when a code is provided.", 13f, false, color(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        urlText.textIsSelectable = true
+        urlText.setTextIsSelectable(true)
         content.addView(urlText)
         gap(content, 10)
         openBrowserButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
@@ -177,7 +177,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
                 openBrowserButton.isEnabled = false
                 copyCodeButton.isEnabled = false
                 refreshAccountState()
-                Toast.makeText(this, "Signed out. The session was cleared from memory.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MicrosoftLoginActivity, "Signed out. The session was cleared from memory.", Toast.LENGTH_SHORT).show()
             }
         }
         content.addView(signOutButton)
