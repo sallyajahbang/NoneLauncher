@@ -39,3 +39,15 @@ These are source-level repairs, not a verified release APK. The first CI log sho
 ## Material 3 UI refresh
 
 The launcher, local-profile manager, and Microsoft device-code sign-in screens now use Jetpack Compose + Material 3. It includes Play, Versions, Account, Settings, and DEV tabs. Version channels are separated, installed versions are grouped by channel, and Play provides a searchable picker restricted to installed versions. See `docs/COMPOSE_MD3_UI_REDESIGN.md` for the change overview and validation status.
+
+
+## Download reliability (retry, resume, and redownload)
+
+- Dependency downloads use six parallel workers and 128 KiB streaming buffers.
+- Transient HTTP/network failures retry up to four attempts with backoff.
+- Verified downloads resume `.part` files with HTTP Range when the server supports it; checksum/size validation is required before promotion to the final path.
+- If a dependency fails after retries, remaining queued/in-flight downloads are stopped and partial files are preserved for manual retry.
+- The Version Manager provides **Redownload** for installed Minecraft versions, with a confirmation warning because shared assets may be fetched again.
+- The Play runtime card provides **Redownload Java runtime**; the prior runtime is retained until the replacement passes validation.
+- A failure dialog offers **Retry** and **Redownload**. Runtime Retry after a forced redownload continues the forced operation and can resume its partial archive rather than short-circuiting to the old runtime.
+

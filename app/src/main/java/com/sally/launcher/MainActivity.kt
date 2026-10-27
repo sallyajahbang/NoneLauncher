@@ -54,8 +54,11 @@ class MainActivity : AppCompatActivity() {
             selectVersion = ::selectVersion,
             refreshCatalog = ::loadVersionCatalog,
             installVersion = ::installVersion,
+            redownloadVersion = ::confirmRedownloadVersion,
             play = ::onPlayPressed,
-            installRuntime = ::installRuntimeForSelectedVersion,
+            installRuntime = { installRuntimeForSelectedVersion(forceRedownload = false) },
+            installJava = ::installJava,
+            redownloadRuntime = ::confirmRedownloadRuntime,
             signInMicrosoft = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
             manageLocalAccounts = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
             prepareProfile = ::prepareLaunchProfile,
@@ -63,7 +66,10 @@ class MainActivity : AppCompatActivity() {
             testJvm = ::runJliRuntimeSmokeTest,
             testGraphics = { startActivity(Intent(this, EngineDiagnosticsActivity::class.java)) },
             testPojav = { startActivity(Intent(this, PojavEngineDiagnosticsActivity::class.java)) },
-            setDarkTheme = ::setDarkTheme,
+            setThemeMode = ::setThemeMode,
+            setAmoledBlack = ::setAmoledBlack,
+            setDynamicColor = ::setDynamicColor,
+            requestDeveloperMode = ::requestDeveloperMode,
             setKeepScreenOn = ::setKeepScreenOn,
             dismissDialog = { updateState { copy(dialog = null) } },
         )
@@ -78,7 +84,10 @@ class MainActivity : AppCompatActivity() {
         val selected = prefs.getString(KEY_SELECTED_VERSION, "").orEmpty()
         uiState.value = uiState.value.copy(
             selectedVersionId = selected,
-            darkTheme = settingsPrefs.getBoolean(KEY_DARK_THEME, true),
+            themeMode = ThemeSettings.read(this).mode,
+            amoledBlack = ThemeSettings.read(this).amoled,
+            dynamicColor = ThemeSettings.read(this).dynamicColor,
+            developerMode = settingsPrefs.getBoolean(KEY_DEVELOPER_MODE, false),
             keepScreenOn = settingsPrefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
             accountStatus = accountStatusSummary(),
         )
@@ -232,20 +241,44 @@ class MainActivity : AppCompatActivity() {
         uiState.value.versions.firstOrNull { it.id == versionId }
             ?: uiState.value.installedVersions.firstOrNull { it.id == versionId }
 
-    private fun installVersion(versionId: String) {
+    private fun installVersion(versionId: String) = runVersionInstall(versionId, forceRedownload = false)
+
+    private fun confirmRedownloadVersion(versionId: String) {
+        if (selectedVersionForInstall(versionId) == null) {
+            showMessage("Version not found", "Refresh the official catalog and select a version again.")
+            return
+        }
+        showDialog(
+            LauncherDialog(
+                title = "Redownload Minecraft $versionId?",
+                message = "This downloads the version metadata, client JAR, libraries, and assets used by this version again. Existing shared assets may be downloaded again too, so this can use a lot of mobile data and storage space. Network failures will retry automatically and partial files can resume when the server supports it.",
+                confirmText = "Redownload",
+                onConfirm = { runVersionInstall(versionId, forceRedownload = true) },
+                dismissText = "Cancel",
+            )
+        )
+    }
+
+    private fun runVersionInstall(versionId: String, forceRedownload: Boolean) {
         val selected = selectedVersionForInstall(versionId)
         if (selected == null) {
             showMessage("Version not found", "Refresh the official catalog and select a version again.")
             return
         }
-        updateState { copy(managerSelectedVersionId = versionId, busyAction = "install:$versionId", catalogStatus = "Preparing Minecraft $versionId…") }
+        val actionKey = if (forceRedownload) "redownload:$versionId" else "install:$versionId"
+        val startLabel = if (forceRedownload) "Preparing full redownload of Minecraft $versionId…" else "Preparing Minecraft $versionId…"
+        updateState { copy(managerSelectedVersionId = versionId, busyAction = actionKey, catalogStatus = startLabel) }
         ioExecutor.execute {
             val result = runCatching {
-                VersionInstaller(applicationContext).installVersion(selected) { message ->
-                    mainHandler.post {
-                        if (!isFinishing && !isDestroyed) updateState { copy(catalogStatus = message) }
-                    }
-                }
+                VersionInstaller(applicationContext).installVersion(
+                    version = selected,
+                    onProgress = { message ->
+                        mainHandler.post {
+                            if (!isFinishing && !isDestroyed) updateState { copy(catalogStatus = message) }
+                        }
+                    },
+                    forceRedownload = forceRedownload,
+                )
             }
             val newInstalled = scanInstalledVersions(catalogVersions)
             mainHandler.post {
@@ -257,18 +290,31 @@ class MainActivity : AppCompatActivity() {
                         versions = mergeVersions(catalogVersions, newInstalled),
                         filter = VersionFilter.INSTALLED,
                         catalogStatus = result.fold(
-                            { "${it.versionId} installed · ${it.libraryFiles} libraries · ${it.assetFiles} assets" },
-                            { "Install failed. Check connection and free storage." },
+                            { "${it.versionId} installed and verified · ${it.downloadedBytes / (1024 * 1024)} MB transferred" },
+                            { error -> "Download failed: ${error.message ?: "unknown error"}" },
                         ),
                     )
                 }
                 result.onSuccess { installed ->
                     selectVersion(installed.versionId)
                     showMessage(
-                        "Version installed",
-                        "Minecraft ${installed.versionId} is installed. Library files: ${installed.libraryFiles}. Asset files: ${installed.assetFiles}. Downloaded this run: ${installed.downloadedBytes / (1024 * 1024)} MB. Select it from Play to launch, and install a compatible Java runtime if needed.",
+                        if (forceRedownload) "Redownload complete" else "Version installed",
+                        "Minecraft ${installed.versionId} is installed and its downloaded files passed available integrity checks. Libraries: ${installed.libraryFiles}. Assets: ${installed.assetFiles}. Data transferred this run: ${installed.downloadedBytes / (1024 * 1024)} MB."
                     )
-                }.onFailure { error -> showMessage("Installation failed", error.message ?: "Could not install Minecraft version files.") }
+                }.onFailure { error ->
+                    val detail = error.message ?: "Could not download Minecraft version files. Check internet, storage, and file permissions."
+                    showDialog(
+                        LauncherDialog(
+                            title = "Download failed",
+                            message = "$detail\n\nThe launcher retries temporary network errors automatically. You can retry the missing files or choose a full redownload.",
+                            confirmText = "Retry",
+                            onConfirm = { runVersionInstall(versionId, forceRedownload = false) },
+                            dismissText = "Close",
+                            neutralText = "Redownload",
+                            onNeutral = { confirmRedownloadVersion(versionId) },
+                        )
+                    )
+                }
                 updateRuntimeStatus()
             }
         }
@@ -279,7 +325,23 @@ class MainActivity : AppCompatActivity() {
         return state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
     }
 
-    private fun installRuntimeForSelectedVersion() {
+    private fun confirmRedownloadRuntime() {
+        if (selectedInstalledVersion() == null) {
+            showMessage("No installed version", "Install a Minecraft version first so the launcher can choose the compatible Java runtime.")
+            return
+        }
+        showDialog(
+            LauncherDialog(
+                title = "Redownload Java runtime?",
+                message = "The compatible Java runtime will be downloaded and verified again before replacing the current runtime. This can use several hundred megabytes of data and needs sufficient free storage. The currently installed runtime is kept until the new one passes validation.",
+                confirmText = "Redownload Java",
+                onConfirm = { installRuntimeForSelectedVersion(forceRedownload = true) },
+                dismissText = "Cancel",
+            )
+        )
+    }
+
+    private fun installRuntimeForSelectedVersion(forceRedownload: Boolean = false, resumeRedownload: Boolean = false) {
         val selected = selectedInstalledVersion()
         if (selected == null) {
             showMessage("No installed version", "Install a Minecraft version first. Open Versions and choose a release, snapshot, beta, or alpha.", "Open Versions") {
@@ -287,12 +349,18 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
-        updateState { copy(busyAction = "runtime", runtimeStatus = "Preparing a compatible Java runtime for ${selected.id}…") }
+        val actionKey = if (forceRedownload) "runtime-redownload" else "runtime"
+        updateState { copy(busyAction = actionKey, runtimeStatus = if (forceRedownload) "Preparing to redownload a compatible Java runtime for ${selected.id}…" else "Preparing a compatible Java runtime for ${selected.id}…") }
         ioExecutor.execute {
             val result = runCatching {
-                RuntimeManager(applicationContext).installForVersion(selected) { message ->
-                    mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
-                }
+                RuntimeManager(applicationContext).installForVersion(
+                    version = selected,
+                    forceRedownload = forceRedownload,
+                    resumeRedownload = resumeRedownload,
+                    onProgress = { message ->
+                        mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
+                    },
+                )
             }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
@@ -300,10 +368,24 @@ class MainActivity : AppCompatActivity() {
                 updateRuntimeStatus()
                 result.onSuccess { installed ->
                     updateState { copy(runtimeStatus = "${installed.displayName()} installed and verified") }
-                    showMessage("Java runtime ready", "Java ${installed.majorVersion} for Android ${installed.architecture} was downloaded, SHA-256 verified, and installed. Run the Java self-test from DEV if startup fails.")
+                    showMessage(
+                        if (forceRedownload) "Java runtime redownloaded" else "Java runtime ready",
+                        "Java ${installed.majorVersion} for Android ${installed.architecture} is installed and verified. Run the Java self-test from DEV if startup fails."
+                    )
                 }.onFailure { error ->
-                    updateState { copy(runtimeStatus = "Runtime installation failed. Check connection and free storage.") }
-                    showMessage("Runtime installation failed", error.message ?: "Could not install a compatible Java runtime.")
+                    val detail = error.message ?: "Could not install a compatible Java runtime. Check the internet connection and free storage."
+                    updateState { copy(runtimeStatus = "Runtime download failed: $detail") }
+                    showDialog(
+                        LauncherDialog(
+                            title = "Runtime download failed",
+                            message = "$detail\n\nTemporary network failures are retried automatically. You can retry the runtime installation or choose to redownload it.",
+                            confirmText = "Retry",
+                            onConfirm = { installRuntimeForSelectedVersion(forceRedownload = forceRedownload, resumeRedownload = forceRedownload) },
+                            dismissText = "Close",
+                            neutralText = "Redownload",
+                            onNeutral = { confirmRedownloadRuntime() },
+                        )
+                    )
                 }
             }
         }
@@ -312,10 +394,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateRuntimeStatus() {
         ioExecutor.execute {
             val runtimes = runCatching { RuntimeManager(applicationContext).installedRuntimes() }.getOrDefault(emptyList())
+            val supported = runCatching { RuntimeManager(applicationContext).supportedJavaMajors() }.getOrDefault(listOf(8, 17))
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
                 updateState {
-                    copy(runtimeStatus = if (runtimes.isEmpty()) "No verified Java runtimes installed on this device." else "Installed: " + runtimes.joinToString(" · ") { it.displayName() })
+                    copy(
+                        installedJavaMajors = runtimes.map { it.majorVersion },
+                        supportedJavaMajors = supported,
+                        runtimeStatus = if (runtimes.isEmpty()) "No verified Java runtimes installed on this device." else "Installed: " + runtimes.joinToString(" · ") { it.displayName() })
                 }
             }
         }
@@ -504,9 +590,60 @@ class MainActivity : AppCompatActivity() {
         updateState { copy(accountStatus = accountStatusSummary()) }
     }
 
-    private fun setDarkTheme(enabled: Boolean) {
-        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_DARK_THEME, enabled).apply()
-        updateState { copy(darkTheme = enabled) }
+    private fun setThemeMode(mode: ThemeMode) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putString(ThemeSettings.KEY_THEME_MODE, mode.name).apply()
+        updateState { copy(themeMode = mode) }
+    }
+
+    private fun setAmoledBlack(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(ThemeSettings.KEY_AMOLED, enabled).apply()
+        updateState { copy(amoledBlack = enabled) }
+    }
+
+    private fun setDynamicColor(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(ThemeSettings.KEY_DYNAMIC_COLOR, enabled).apply()
+        updateState { copy(dynamicColor = enabled) }
+    }
+
+    // design.md §7.8: enabling Developer mode shows a warning first; disabling is immediate.
+    private fun requestDeveloperMode(enabled: Boolean) {
+        if (!enabled) {
+            setDeveloperMode(false)
+            return
+        }
+        showDialog(
+            LauncherDialog(
+                title = "Aktifkan Mode Developer?",
+                message = "Opsi ini untuk pengguna tingkat lanjut. Salah mengatur bisa membuat game crash.",
+                confirmText = "Aktifkan",
+                onConfirm = { setDeveloperMode(true) },
+                dismissText = "Batal",
+            )
+        )
+    }
+
+    private fun setDeveloperMode(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_DEVELOPER_MODE, enabled).apply()
+        updateState { copy(developerMode = enabled) }
+    }
+
+    private fun installJava(major: Int) {
+        updateState { copy(busyAction = "runtime", runtimeStatus = "Menyiapkan Java $major…") }
+        ioExecutor.execute {
+            val result = runCatching {
+                RuntimeManager(applicationContext).installMajor(major) { message ->
+                    mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
+                }
+            }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState { copy(busyAction = null) }
+                updateRuntimeStatus()
+                result.onFailure { error ->
+                    showMessage("Install Java gagal", error.message ?: "Periksa koneksi internet dan ruang penyimpanan.")
+                }
+            }
+        }
     }
 
     private fun setKeepScreenOn(enabled: Boolean) {
@@ -523,6 +660,7 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val KEY_SELECTED_VERSION = "selected_minecraft_version"
         const val KEY_DARK_THEME = "dark_theme"
+        const val KEY_DEVELOPER_MODE = "developer_mode"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val PREFS_SETTINGS = "sally_launcher_settings"
     }

@@ -47,7 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sally.launcher.SallyMaterialTheme
+import com.sally.launcher.SallyLauncherTheme
+import com.sally.launcher.ThemeSettings
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.engine.OfflineAccountProfile
@@ -66,7 +67,7 @@ class LocalAccountActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         refreshAccounts()
         setContent {
-            SallyMaterialTheme(darkTheme = getSharedPreferences("sally_launcher_settings", MODE_PRIVATE).getBoolean("dark_theme", true)) {
+            SallyLauncherTheme(settings = ThemeSettings.read(this)) {
                 LocalAccountsScreen(
                     accounts = accounts,
                     username = username,
