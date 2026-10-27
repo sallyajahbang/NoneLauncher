@@ -24,13 +24,6 @@
             android:screenOrientation="landscape"
             android:label="Pojav bridge diagnostics" />
         <activity
-            android:name=".core.auth.LocalAccountActivity"
-            android:exported="false"
-            android:screenOrientation="unspecified"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustResize"
-            android:label="Local account" />
-        <activity
             android:name=".core.auth.MicrosoftLoginActivity"
             android:exported="false"
             android:screenOrientation="unspecified"
@@ -46,6 +39,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/Theme.SallyLauncher.Starting"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize">
