@@ -103,7 +103,7 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
 
         if (isWideScreen()) {
             // design.md §5.1: landscape / expanded → NavigationRail on the left.
-            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     Spacer(Modifier.height(12.dp))
                     LauncherTab.entries.forEach { tab ->
@@ -339,6 +339,7 @@ private fun StatusChip(text: String, ok: Boolean) {
 @Composable
 private fun VersionsScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
     var query by remember { mutableStateOf("") }
+    var actionVersionId by remember { mutableStateOf<String?>(null) }
     val baseList = when (state.filter) {
         VersionFilter.INSTALLED -> state.installedVersions
         VersionFilter.RELEASE -> state.versions.filter { it.type.equals("release", true) }
@@ -353,12 +354,12 @@ private fun VersionsScreen(state: LauncherUiState, actions: LauncherActions, onO
     val header: @Composable () -> Unit = {
         ScreenHeader(
             title = "Versi",
-            subtitle = state.catalogStatus,
+            subtitle = if (state.versions.isEmpty()) "Memuat daftar versi…" else "${state.versions.size} versi resmi",
             onOpenAccount = onOpenAccount,
             trailing = {
                 IconButton(onClick = actions.refreshCatalog, enabled = !state.refreshing) {
                     if (state.refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    else Icon(Icons.Outlined.Refresh, contentDescription = "Segarkan")
                 }
             },
         )
@@ -380,29 +381,36 @@ private fun VersionsScreen(state: LauncherUiState, actions: LauncherActions, onO
     }
 
     if (isWideScreen()) {
-        Row(
-            modifier.fillMaxSize().padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        Row(modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(.55f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 header()
                 controls()
-                VersionList(list, state, actions, Modifier.weight(1f))
+                VersionList(list, state, actions, onItemClick = { actions.selectVersion(it) }, modifier = Modifier.weight(1f))
             }
             VersionDetailCard(selected, state, actions, Modifier.weight(.45f).fillMaxHeight())
         }
     } else {
-        Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             header()
             controls()
-            if (selected != null) VersionDetailCard(selected, state, actions, Modifier.fillMaxWidth())
-            VersionList(list, state, actions, Modifier.weight(1f))
+            VersionList(list, state, actions, onItemClick = { actionVersionId = it }, modifier = Modifier.weight(1f))
+        }
+        actionVersionId?.let { id ->
+            (state.versions + state.installedVersions).firstOrNull { it.id == id }?.let { version ->
+                VersionActionDialog(version, state, actions, onDismiss = { actionVersionId = null })
+            }
         }
     }
 }
 
 @Composable
-private fun VersionList(list: List<MinecraftVersion>, state: LauncherUiState, actions: LauncherActions, modifier: Modifier) {
+private fun VersionList(
+    list: List<MinecraftVersion>,
+    state: LauncherUiState,
+    actions: LauncherActions,
+    onItemClick: (String) -> Unit,
+    modifier: Modifier,
+) {
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
         when {
             state.loadingCatalog && list.isEmpty() && state.filter != VersionFilter.INSTALLED -> item {
@@ -412,8 +420,8 @@ private fun VersionList(list: List<MinecraftVersion>, state: LauncherUiState, ac
                 EmptyState(
                     icon = if (state.filter == VersionFilter.INSTALLED) Icons.Outlined.FolderOpen else Icons.Outlined.Extension,
                     title = if (state.filter == VersionFilter.INSTALLED) "Belum ada versi terpasang" else "Tidak ada versi di kategori ini",
-                    body = if (state.filter == VersionFilter.INSTALLED) "Pilih Release atau Snapshot lalu pasang satu versi." else "Segarkan katalog atau periksa koneksi.",
-                    buttonText = if (state.filter == VersionFilter.INSTALLED) "Lihat Release" else "Segarkan katalog",
+                    body = if (state.filter == VersionFilter.INSTALLED) "Pilih Release lalu pasang satu versi." else "Segarkan daftar atau periksa koneksi.",
+                    buttonText = if (state.filter == VersionFilter.INSTALLED) "Lihat Release" else "Segarkan",
                     onClick = { if (state.filter == VersionFilter.INSTALLED) actions.setFilter(VersionFilter.RELEASE) else actions.refreshCatalog() },
                 )
             }
@@ -425,14 +433,55 @@ private fun VersionList(list: List<MinecraftVersion>, state: LauncherUiState, ac
                     installed = installed,
                     selected = state.managerSelectedVersionId == version.id || state.selectedVersionId == version.id,
                     busy = busy,
-                    onClick = { actions.selectVersion(version.id) },
-                    onUse = { actions.selectVersion(version.id) },
-                    onRedownload = { actions.redownloadVersion(version.id) },
-                    onInstall = { actions.installVersion(version.id) },
+                    onClick = { onItemClick(version.id) },
+                    onUse = { onItemClick(version.id) },
+                    onRedownload = { onItemClick(version.id) },
+                    onInstall = { onItemClick(version.id) },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun VersionActionDialog(version: MinecraftVersion, state: LauncherUiState, actions: LauncherActions, onDismiss: () -> Unit) {
+    val installed = state.installedVersions.any { it.id == version.id }
+    val busy = state.busyAction == "install:${version.id}" || state.busyAction == "redownload:${version.id}"
+    val inUse = state.selectedVersionId == version.id
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(version.id) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "${versionFilterLabel(version.type)} · ${version.releaseTime.take(10).ifBlank { "-" }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                StatusPill(if (installed) "Terpasang" else "Belum terpasang", installed)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (installed) {
+                    Button(
+                        onClick = { onDismiss(); actions.selectVersion(version.id) },
+                        enabled = !busy && !inUse,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (inUse) "Sedang dipakai" else "Pakai di Home") }
+                    OutlinedButton(
+                        onClick = { onDismiss(); actions.redownloadVersion(version.id) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Redownload") }
+                } else {
+                    Button(
+                        onClick = { onDismiss(); actions.installVersion(version.id) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (busy) "Memasang…" else "Pasang") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } },
+    )
 }
 
 @Composable

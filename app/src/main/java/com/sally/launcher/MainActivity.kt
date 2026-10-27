@@ -12,6 +12,9 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.sally.launcher.core.auth.LocalAccountActivity
 import com.sally.launcher.core.auth.LocalAccountRepository
 import com.sally.launcher.core.auth.MicrosoftLoginActivity
@@ -77,6 +80,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
         repository = VersionManifestRepository(applicationContext)
         LocalAccountRepository.restoreSelectedSession(this)
         val prefs = getPreferences(MODE_PRIVATE)
@@ -104,6 +109,19 @@ class MainActivity : AppCompatActivity() {
         LocalAccountRepository.restoreSelectedSession(this)
         updateAccountStatus()
         refreshInstalledVersionsAsync()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
+    // Fullscreen: hide status and navigation bars; they reappear briefly on a swipe.
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     override fun onDestroy() {
