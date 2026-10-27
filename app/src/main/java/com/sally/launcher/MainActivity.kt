@@ -29,6 +29,7 @@ import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.core.engine.JliBridgeDiagnostics
+import com.sally.launcher.core.engine.JliRuntimeSmokeService
 import com.sally.launcher.core.engine.JliLaunchSpecBuilder
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
