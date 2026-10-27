@@ -21,6 +21,7 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
+import com.sally.launcher.core.engine.MinecraftAccountType
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -167,7 +168,9 @@ class MicrosoftLoginActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             setOnClickListener {
                 cancelPendingWork()
-                MinecraftLaunchSessionStore.clear()
+                if (MinecraftLaunchSessionStore.current()?.accountType == MinecraftAccountType.MICROSOFT) {
+                    MinecraftLaunchSessionStore.clear()
+                }
                 currentChallenge = null
                 codeText.text = "Sign-in code will appear here"
                 urlText.text = "Open the official verification page when a code is provided."
@@ -223,6 +226,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
                     },
                 )
                 if (cancellation.get()) throw InterruptedException("Sign-in cancelled")
+                LocalAccountRepository.clearLocalSelectionForMicrosoft(applicationContext)
                 MinecraftLaunchSessionStore.installAfterAuthentication(session)
                 completed = true
                 mainHandler.post {
@@ -288,7 +292,7 @@ class MicrosoftLoginActivity : AppCompatActivity() {
         startButton.isEnabled = !busy
         clientIdInput.isEnabled = !busy
         cancelButton.isEnabled = busy
-        signOutButton.isEnabled = !busy && MinecraftLaunchSessionStore.current() != null
+        signOutButton.isEnabled = !busy && MinecraftLaunchSessionStore.current()?.accountType == MinecraftAccountType.MICROSOFT
     }
 
     private fun refreshAccountState() {
@@ -296,7 +300,10 @@ class MicrosoftLoginActivity : AppCompatActivity() {
         val issue = session?.validationError()
         if (session == null || issue != null) {
             if (issue != null) MinecraftLaunchSessionStore.clear()
-            statusText.text = issue ?: "Not signed in."
+            statusText.text = issue ?: "Not signed in to Microsoft."
+            signOutButton.isEnabled = false
+        } else if (session.accountType == MinecraftAccountType.LOCAL) {
+            statusText.text = "Local account ${session.username} is currently active. Signing in here will switch to a Microsoft account."
             signOutButton.isEnabled = false
         } else {
             statusText.text = "Signed in as ${session.username} · Microsoft account. Token held in memory only."

@@ -27,8 +27,8 @@ class PojavJliLaunchExecutor(context: Context) {
             throw IllegalStateException("JLI_Launch must run on a dedicated worker thread, never the UI thread.")
         }
         session.validationError()?.let { throw IOException(it) }
-        if (!profile.isAuthenticatedSession) {
-            throw IOException("The launch profile was not built with the validated account session.")
+        if (!profile.hasValidAccountSession || profile.accountType != session.accountType) {
+            throw IOException("The launch profile was not built with this validated account type.")
         }
         if (profile.sessionUsername != session.username || profile.sessionUuid != session.normalizedUuid) {
             throw IOException("The account session changed after the launch profile was built. Prepare the profile again.")

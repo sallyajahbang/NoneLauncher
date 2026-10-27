@@ -14,7 +14,7 @@ import java.util.UUID
 /**
  * Resolves the launch data from Mojang's version JSON without starting a JVM.
  * The result is a validated launch profile. The Pojav JLI executor is a separate layer and
- * refuses to execute until the authenticated session, runtime payload, surface and native bridge
+ * refuses to execute until a validated account profile, runtime payload, surface and native bridge
  * are all ready.
  */
 class LaunchProfileBuilder(context: Context) {
@@ -37,7 +37,8 @@ class LaunchProfileBuilder(context: Context) {
         val gameArguments: List<String>,
         val workingDirectory: File,
         val assetIndexId: String,
-        val isAuthenticatedSession: Boolean = false,
+        val hasValidAccountSession: Boolean = false,
+        val accountType: MinecraftAccountType? = null,
         val sessionUsername: String? = null,
         val sessionUuid: String? = null,
     ) {
@@ -193,7 +194,8 @@ class LaunchProfileBuilder(context: Context) {
             gameArguments = gameArguments,
             workingDirectory = workingDirectory,
             assetIndexId = assetIndexId,
-            isAuthenticatedSession = session != null && session.validationError() == null,
+            hasValidAccountSession = session != null && session.validationError() == null,
+            accountType = session?.accountType,
             sessionUsername = session?.username,
             sessionUuid = session?.normalizedUuid,
         )

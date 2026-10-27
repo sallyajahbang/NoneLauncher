@@ -33,9 +33,39 @@ class MinecraftLaunchSessionTest {
     }
 
     @Test
-    fun nonMicrosoftUserTypeIsRejected() {
+    fun nonMicrosoftUserTypeIsRejectedForMicrosoftIdentity() {
         val session = validSession().copy(userType = "legacy")
         assertNotNull(session.validationError())
+    }
+
+    @Test
+    fun localOfflineIdentityPassesWithDeterministicOfflineUuidAndNoToken() {
+        val profile = OfflineAccountProfile.create("SallyLocal")
+        val session = profile.toSession()
+        assertEquals("legacy", session.userType)
+        assertEquals("0", session.accessToken)
+        assertEquals(MinecraftAccountType.LOCAL, session.accountType)
+        assertNull(session.validationError())
+        assertEquals(OfflineAccountProfile.offlineUuid("SallyLocal"), session.normalizedUuid)
+    }
+
+    @Test
+    fun localIdentityRejectsUnexpectedOnlineToken() {
+        val session = OfflineAccountProfile.create("SallyLocal").toSession().copy(accessToken = "unexpected-token")
+        assertNotNull(session.validationError())
+    }
+
+    @Test
+    fun localIdentityRejectsUuidCopiedFromAnotherName() {
+        val session = OfflineAccountProfile.create("SallyLocal").toSession().copy(uuid = OfflineAccountProfile.offlineUuid("OtherName"))
+        assertNotNull(session.validationError())
+    }
+
+    @Test
+    fun invalidOfflineNameIsRejected() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            OfflineAccountProfile.create("invalid name!")
+        }
     }
 
     @Test

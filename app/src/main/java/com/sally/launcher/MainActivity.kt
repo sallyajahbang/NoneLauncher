@@ -30,6 +30,9 @@ import com.sally.launcher.core.engine.JliRuntimeSmokeService
 import com.sally.launcher.core.engine.JliLaunchSpecBuilder
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.auth.MicrosoftLoginActivity
+import com.sally.launcher.core.auth.LocalAccountActivity
+import com.sally.launcher.core.auth.LocalAccountRepository
+import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.PojavGameActivity
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
@@ -57,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var engineStatusText: TextView
     private lateinit var accountStatusText: TextView
     private lateinit var signInButton: MaterialButton
+    private lateinit var localAccountButton: MaterialButton
     private var jvmSmokeReceiver: BroadcastReceiver? = null
     private var jvmSmokeTimeout: Runnable? = null
     private lateinit var versions: List<MinecraftVersion>
@@ -65,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = VersionManifestRepository(applicationContext)
+        LocalAccountRepository.restoreSelectedSession(this)
         selectedVersionId = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
         setContentView(createContentView())
         updateRuntimeStatus()
@@ -177,13 +182,13 @@ class MainActivity : AppCompatActivity() {
         engineContent.addView(textView("NATIVE ENGINE · Pojav / JLI", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Sign in with a Microsoft account that owns Minecraft: Java Edition before launching. Device-code authentication uses Microsoft's website and never asks for your password inside Sally.",
+            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Use Microsoft sign-in for authenticated online play, or create a local/offline profile for single-player and servers configured to allow offline identities.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
         addGap(engineContent, 10)
         accountStatusText = textView(
-            "Checking Microsoft account…",
+            "Checking active account…",
             13f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         )
@@ -196,6 +201,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, MicrosoftLoginActivity::class.java)) }
         }
         engineContent.addView(signInButton)
+        addGap(engineContent, 8)
+        localAccountButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Manage local accounts"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { startActivity(Intent(this@MainActivity, LocalAccountActivity::class.java)) }
+        }
+        engineContent.addView(localAccountButton)
         addGap(engineContent, 12)
         prepareLaunchButton = MaterialButton(this).apply {
             text = "Prepare launch profile"
@@ -486,7 +499,8 @@ class MainActivity : AppCompatActivity() {
                                 "Native library directories: ${launchSpec.nativeLibraryDirectories.size}\n" +
                                 "Working directory: ${launchSpec.workingDirectory.absolutePath}\n" +
                                 "Assets index: ${profile.assetIndexId}\n" +
-                                "Authenticated session: ${profile.isAuthenticatedSession}\n\n" +
+                                "Valid account profile: ${profile.hasValidAccountSession}\n" +
+                                "Account type: ${profile.accountType ?: "none"}\n\n" +
                                 "Remaining blockers:\n$blockers\n\n" +
                                 "Session tokens are never displayed in diagnostics. The game activity invokes native JLI only when all checks pass and the Pojav surface is bound."
                         )
@@ -522,7 +536,7 @@ class MainActivity : AppCompatActivity() {
                 jvmBridgeButton.text = "Probe installed JVM bridge"
                 result.onSuccess { (runtime, probe) ->
                     engineStatusText.text = if (probe.available) {
-                        "JLI loader probe passed for ${runtime.displayName()}. This verifies library availability only; actual launch still requires an authenticated Java profile, a bound surface, and device-tested renderer compatibility."
+                        "JLI loader probe passed for ${runtime.displayName()}. This verifies library availability only; actual launch still requires a valid account profile, a bound surface, and device-tested renderer compatibility."
                     } else {
                         "JLI loader probe failed for ${runtime.displayName()}. See diagnostic details."
                     }
@@ -567,7 +581,7 @@ class MainActivity : AppCompatActivity() {
                 val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
                 val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
                 engineStatusText.text = if (passed) {
-                    "JVM startup test passed for $runtime. This does not prove Minecraft will render; actual launch also requires an authenticated Java account and a successful device-side game-surface test."
+                    "JVM startup test passed for $runtime. This does not prove Minecraft will render; actual launch also requires a valid Microsoft or local account profile and a successful device-side game-surface test."
                 } else {
                     "JVM startup test failed or is unavailable for $runtime. See the diagnostic log for details."
                 }
@@ -654,15 +668,11 @@ class MainActivity : AppCompatActivity() {
         val session = MinecraftLaunchSessionStore.current()
         if (session == null) {
             MaterialAlertDialogBuilder(this)
-                .setTitle("Minecraft account required")
-                .setMessage(
-                    "Sign in with Microsoft and confirm this account owns Minecraft: Java Edition. " +
-                        "Sally verifies the account through Microsoft, Xbox Live, XSTS, and Minecraft Services; it will not use an offline placeholder token."
-                )
+                .setTitle("Choose an account")
+                .setMessage("Sign in with Microsoft for an authenticated Minecraft Java profile, or use a local/offline profile for single-player and servers that explicitly allow offline mode.")
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Sign in") { _, _ ->
-                    startActivity(Intent(this, MicrosoftLoginActivity::class.java))
-                }
+                .setNeutralButton("Local account") { _, _ -> startActivity(Intent(this, LocalAccountActivity::class.java)) }
+                .setPositiveButton("Microsoft sign-in") { _, _ -> startActivity(Intent(this, MicrosoftLoginActivity::class.java)) }
                 .show()
             return
         }
@@ -670,7 +680,7 @@ class MainActivity : AppCompatActivity() {
         if (sessionError != null) {
             MinecraftLaunchSessionStore.clear()
             MaterialAlertDialogBuilder(this)
-                .setTitle("Minecraft account session expired or invalid")
+                .setTitle("Minecraft account profile invalid")
                 .setMessage(sessionError)
                 .setPositiveButton("OK", null)
                 .show()
@@ -690,12 +700,13 @@ class MainActivity : AppCompatActivity() {
         val problem = session?.validationError()
         if (problem != null) MinecraftLaunchSessionStore.clear()
         accountStatusText.text = when {
-            session == null -> "Account: not signed in. Sign in to enable authenticated Java launch."
-            problem != null -> "Account session is invalid: $problem"
+            session == null -> "Account: none selected. Choose Microsoft or local/offline account."
+            problem != null -> "Account profile is invalid: $problem"
+            session.accountType == MinecraftAccountType.LOCAL -> "Using ${session.username} · Local/offline account. Online-mode servers require Microsoft authentication."
             else -> "Signed in as ${session.username} · Microsoft account (token in memory only)."
         }
         if (::signInButton.isInitialized) {
-            signInButton.text = if (session != null && problem == null) "Manage / sign out account" else "Sign in with Microsoft"
+            signInButton.text = if (session?.accountType == MinecraftAccountType.MICROSOFT && problem == null) "Manage / sign out Microsoft account" else "Sign in with Microsoft"
         }
     }
 

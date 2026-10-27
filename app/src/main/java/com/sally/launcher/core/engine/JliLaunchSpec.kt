@@ -133,8 +133,8 @@ class JliLaunchSpecBuilder(context: Context) {
             appNativeLibraryDir = appNativeDir,
         )
         val blockers = compatibility.blockers.toMutableList()
-        if (!profile.isAuthenticatedSession) {
-            blockers += "Sign in with a Microsoft account linked to Minecraft Java Edition before launching. Offline placeholder tokens are not accepted."
+        if (!profile.hasValidAccountSession) {
+            blockers += "Select a valid Microsoft or local account profile before launching."
         }
 
         return JliLaunchSpec(

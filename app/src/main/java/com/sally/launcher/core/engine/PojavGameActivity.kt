@@ -18,7 +18,7 @@ import com.sally.launcher.data.model.MinecraftVersion
 import java.io.IOException
 import java.util.concurrent.Executors
 
-/** Landscape game host. It starts JLI only after a bound Pojav surface and a real account session exist. */
+/** Landscape game host. It starts JLI only after a bound Pojav surface and a validated account profile exist. */
 class PojavGameActivity : AppCompatActivity() {
     private val launchExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "Sally-Minecraft-JLI").apply { isDaemon = false }
@@ -136,7 +136,7 @@ class PojavGameActivity : AppCompatActivity() {
         val version = requestedVersion ?: return
         val session = MinecraftLaunchSessionStore.current()
         if (session == null) {
-            statusText.text = "Graphics/input surface is ready. Sign in with a Microsoft account linked to Minecraft Java Edition before launch. No offline placeholder token will be used."
+            statusText.text = "Graphics/input surface is ready. Choose a Microsoft account or a local/offline profile before launching."
             return
         }
         val sessionError = session.validationError()
@@ -148,7 +148,7 @@ class PojavGameActivity : AppCompatActivity() {
 
         launchStarted = true
         closeButton.isEnabled = false
-        statusText.text = "Preparing Java ${version.id}, native library paths, and authenticated launch arguments…"
+        statusText.text = "Preparing Java ${version.id}, native library paths, and ${if (session.isLocalAccount) "local/offline" else "Microsoft-authenticated"} launch arguments…"
         launchExecutor.execute {
             val result = runCatching {
                 val profile = LaunchProfileBuilder(applicationContext).prepare(version, session = session)
