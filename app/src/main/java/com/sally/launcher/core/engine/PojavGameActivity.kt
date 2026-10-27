@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
 import com.sally.launcher.data.model.MinecraftVersion
+import org.lwjgl.glfw.CallbackBridge
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -179,7 +180,7 @@ class PojavGameActivity : AppCompatActivity() {
         closeButton.isEnabled = false
         gamePanel.visibility = View.GONE
         touchOverlay.visibility = View.VISIBLE
-        touchOverlay.onGrabChanged(org.lwjgl.glfw.CallbackBridge.isGrabbing)
+        touchOverlay.onGrabChanged(CallbackBridge.isGrabbing)
         statusText.text = "Preparing Java ${version.id}, native library paths, and ${if (session.isLocalAccount) "local/offline" else "Microsoft-authenticated"} launch arguments…"
         launchExecutor.execute {
             val result = runCatching {
