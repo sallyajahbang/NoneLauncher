@@ -87,7 +87,7 @@ class PojavGameActivity : AppCompatActivity() {
         // On-screen controls + touch gestures (Pojav-style): shown once the JVM is starting.
         touchOverlay = GameTouchOverlay(this).apply {
             visibility = View.GONE
-            optionsFile = File(File(LauncherStorage.minecraftRoot(this), "game"), "options.txt")
+            optionsFile = File(File(LauncherStorage.minecraftRoot(this@PojavGameActivity), "game"), "options.txt")
         }
         root.addView(touchOverlay, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
