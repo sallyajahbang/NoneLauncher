@@ -1,5 +1,6 @@
 package com.sally.launcher.core.engine
 
+import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Build
@@ -50,7 +51,11 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         title = "Engine diagnostics"
 
         val root = FrameLayout(this)
-        glView = GLSurfaceView(this).apply {
+        glView = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CaptureAwareGlSurfaceView(this, ::handlePointerCaptureChanged)
+        } else {
+            GLSurfaceView(this)
+        }).apply {
             setEGLContextClientVersion(2)
             preserveEGLContextOnPause = false
             setRenderer(this@EngineDiagnosticsActivity)
@@ -97,20 +102,6 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             glView.setOnCapturedPointerListener { _, event -> handleCapturedPointer(event) }
-            glView.setOnPointerCaptureChangeListener { _, hasCapture ->
-                if (::captureButton.isInitialized) {
-                    captureButton.text = if (hasCapture) "Release mouse" else "Capture mouse"
-                }
-                NativeEngineBridge.sendInput(
-                    NativeEngineBridge.EVENT_CURSOR_CAPTURE,
-                    0,
-                    if (hasCapture) GlfwInputMapping.PRESS else GlfwInputMapping.RELEASE,
-                    0f,
-                    0f,
-                    0f,
-                )
-                infoView.text = statusWithEvents()
-            }
         }
 
         setContentView(root)
@@ -227,6 +218,22 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun releaseTrackedInput() {
         inputTranslator.releaseAll()
         releaseTouchPointers()
+    }
+
+    /** Called by the GLSurfaceView override when Android grants or revokes capture. */
+    private fun handlePointerCaptureChanged(hasCapture: Boolean) {
+        if (::captureButton.isInitialized) {
+            captureButton.text = if (hasCapture) "Release mouse" else "Capture mouse"
+        }
+        NativeEngineBridge.sendInput(
+            NativeEngineBridge.EVENT_CURSOR_CAPTURE,
+            0,
+            if (hasCapture) GlfwInputMapping.PRESS else GlfwInputMapping.RELEASE,
+            0f,
+            0f,
+            0f,
+        )
+        if (::infoView.isInitialized) infoView.text = statusWithEvents()
     }
 
     private fun togglePointerCapture() {
@@ -455,6 +462,17 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         "\nLast event: $lastEventSummary"
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
+    private class CaptureAwareGlSurfaceView(
+        context: Context,
+        private val captureChanged: (Boolean) -> Unit,
+    ) : GLSurfaceView(context) {
+        override fun onPointerCaptureChange(hasCapture: Boolean) {
+            super.onPointerCaptureChange(hasCapture)
+            captureChanged(hasCapture)
+        }
+    }
 
     private companion object {
         const val VERTEX_SHADER = """
