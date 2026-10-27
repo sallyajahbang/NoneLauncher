@@ -1,5 +1,6 @@
 package com.sally.launcher.core.engine
 
+import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Build
@@ -29,6 +30,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var infoView: TextView
     private lateinit var captureButton: Button
     private val inputTranslator = AndroidInputTranslator()
+    private val inputPump = NativeInputPump()
     private val activeTouchPointers = LinkedHashSet<Int>()
     private var captureEscapeHandled = false
 
@@ -36,6 +38,8 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var pointerY = 0f
     @Volatile private var hasPointer = false
     @Volatile private var processedEvents = 0
+    @Volatile private var malformedInputRecords = 0
+    @Volatile private var inputSinkFailures = 0
     @Volatile private var lastEventSummary = "No input received yet"
 
     private var lastUiReportAt = 0L
@@ -50,7 +54,11 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         title = "Engine diagnostics"
 
         val root = FrameLayout(this)
-        glView = GLSurfaceView(this).apply {
+        glView = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CaptureAwareGlSurfaceView(this, ::handlePointerCaptureChanged)
+        } else {
+            GLSurfaceView(this)
+        }).apply {
             setEGLContextClientVersion(2)
             preserveEGLContextOnPause = false
             setRenderer(this@EngineDiagnosticsActivity)
@@ -96,21 +104,14 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         root.addView(captureButton, captureParams)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            glView.setOnCapturedPointerListener { _, event -> handleCapturedPointer(event) }
-            glView.setOnPointerCaptureChangeListener { _, hasCapture ->
-                if (::captureButton.isInitialized) {
-                    captureButton.text = if (hasCapture) "Release mouse" else "Capture mouse"
+            // Use the explicit Java listener type instead of SAM lambda inference. This works
+            // across Kotlin compiler versions and Android SDK stubs that fail to infer the
+            // two parameters for setOnCapturedPointerListener.
+            glView.setOnCapturedPointerListener(object : View.OnCapturedPointerListener {
+                override fun onCapturedPointer(view: View, event: MotionEvent): Boolean {
+                    return handleCapturedPointer(event)
                 }
-                NativeEngineBridge.sendInput(
-                    NativeEngineBridge.EVENT_CURSOR_CAPTURE,
-                    0,
-                    if (hasCapture) GlfwInputMapping.PRESS else GlfwInputMapping.RELEASE,
-                    0f,
-                    0f,
-                    0f,
-                )
-                infoView.text = statusWithEvents()
-            }
+            })
         }
 
         setContentView(root)
@@ -227,6 +228,22 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun releaseTrackedInput() {
         inputTranslator.releaseAll()
         releaseTouchPointers()
+    }
+
+    /** Called by the GLSurfaceView override when Android grants or revokes capture. */
+    private fun handlePointerCaptureChanged(hasCapture: Boolean) {
+        if (::captureButton.isInitialized) {
+            captureButton.text = if (hasCapture) "Release mouse" else "Capture mouse"
+        }
+        NativeEngineBridge.sendInput(
+            NativeEngineBridge.EVENT_CURSOR_CAPTURE,
+            0,
+            if (hasCapture) GlfwInputMapping.PRESS else GlfwInputMapping.RELEASE,
+            0f,
+            0f,
+            0f,
+        )
+        if (::infoView.isInitialized) infoView.text = statusWithEvents()
     }
 
     private fun togglePointerCapture() {
@@ -402,12 +419,16 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             }
         }
 
-        val batch = NativeEngineBridge.pollEvents(64)
-        if (batch.isNotEmpty()) {
-            val count = batch.size / 6
-            processedEvents += count
-            val offset = batch.size - 6
-            lastEventSummary = "type=${batch[offset].toInt()}, code=${batch[offset + 1].toInt()}, action=${batch[offset + 2].toInt()}"
+        // Drain on the GL/render thread so a future GLFW adapter can consume the same ordered
+        // events on the engine thread. At this stage the sink only updates diagnostics.
+        val pumpResult = inputPump.drain(64) { event ->
+            lastEventSummary = event.toDebugString()
+        }
+        processedEvents += pumpResult.deliveredEventCount
+        malformedInputRecords += pumpResult.malformedRecordCount
+        inputSinkFailures += pumpResult.sinkFailureCount + pumpResult.sourceFailureCount
+        if (pumpResult.recordsRead > 0 || pumpResult.malformedRecordCount > 0 ||
+            pumpResult.sourceFailureCount > 0 || pumpResult.sinkFailureCount > 0) {
             val now = SystemClock.uptimeMillis()
             if (now - lastUiReportAt > 250) {
                 lastUiReportAt = now
@@ -450,11 +471,24 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun statusWithEvents(): String = initialStatus() +
-        "\n\nNative events processed: $processedEvents" +
+        "\n\nNative events delivered to diagnostic sink: $processedEvents" +
+        "\nMalformed records: $malformedInputRecords" +
+        "\nPump/source failures: $inputSinkFailures" +
         "\nQueue depth: ${NativeEngineBridge.queuedEventCount()}" +
         "\nLast event: $lastEventSummary"
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
+    private class CaptureAwareGlSurfaceView(
+        context: Context,
+        private val captureChanged: (Boolean) -> Unit,
+    ) : GLSurfaceView(context) {
+        override fun onPointerCaptureChange(hasCapture: Boolean) {
+            super.onPointerCaptureChange(hasCapture)
+            captureChanged(hasCapture)
+        }
+    }
 
     private companion object {
         const val VERTEX_SHADER = """
