@@ -5,84 +5,96 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
-import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.TypedValue
-import android.view.View
-import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.MaterialAutoCompleteTextView
-import com.google.android.material.textfield.TextInputLayout
-import com.sally.launcher.core.engine.LaunchProfileBuilder
-import com.sally.launcher.core.engine.JliBridgeDiagnostics
-import com.sally.launcher.core.engine.JliRuntimeSmokeService
-import com.sally.launcher.core.engine.JliLaunchSpecBuilder
-import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
-import com.sally.launcher.core.auth.MicrosoftLoginActivity
 import com.sally.launcher.core.auth.LocalAccountActivity
 import com.sally.launcher.core.auth.LocalAccountRepository
+import com.sally.launcher.core.auth.MicrosoftLoginActivity
+import com.sally.launcher.core.engine.EngineDiagnosticsActivity
+import com.sally.launcher.core.engine.JliBridgeDiagnostics
+import com.sally.launcher.core.engine.JliLaunchSpecBuilder
+import com.sally.launcher.core.engine.JliRuntimeSmokeService
+import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.core.engine.MinecraftAccountType
-import com.sally.launcher.core.engine.PojavGameActivity
+import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
+import com.sally.launcher.core.engine.PojavEngineDiagnosticsActivity
 import com.sally.launcher.core.engine.PojavEnginePayloadInstaller
-import com.sally.launcher.data.model.MinecraftVersion
-import com.sally.launcher.data.storage.LauncherStorage
+import com.sally.launcher.core.engine.PojavGameActivity
 import com.sally.launcher.data.install.VersionInstaller
-import com.sally.launcher.data.runtime.RuntimeManager
+import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.model.VersionCatalog
+import com.sally.launcher.data.runtime.RuntimeManager
+import com.sally.launcher.data.storage.LauncherStorage
 import com.sally.launcher.data.version.VersionManifestRepository
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import androidx.compose.runtime.mutableStateOf
 
 class MainActivity : AppCompatActivity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var repository: VersionManifestRepository
-    private lateinit var versionInput: MaterialAutoCompleteTextView
-    private lateinit var statusText: TextView
-    private lateinit var refreshButton: MaterialButton
-    private lateinit var playButton: MaterialButton
-    private lateinit var installButton: MaterialButton
-    private lateinit var runtimeButton: MaterialButton
-    private lateinit var runtimeStatusText: TextView
-    private lateinit var prepareLaunchButton: MaterialButton
-    private lateinit var engineDiagnosticsButton: MaterialButton
-    private lateinit var pojavBridgeDiagnosticsButton: MaterialButton
-    private lateinit var jvmBridgeButton: MaterialButton
-    private lateinit var jvmSmokeButton: MaterialButton
-    private lateinit var engineStatusText: TextView
-    private lateinit var accountStatusText: TextView
-    private lateinit var signInButton: MaterialButton
-    private lateinit var localAccountButton: MaterialButton
+    private val uiState = mutableStateOf(LauncherUiState())
+    private var catalogVersions: List<MinecraftVersion> = emptyList()
+    private var latestReleaseId: String? = null
+    private var latestSnapshotId: String? = null
     private var jvmSmokeReceiver: BroadcastReceiver? = null
     private var jvmSmokeTimeout: Runnable? = null
-    private lateinit var versions: List<MinecraftVersion>
-    private var selectedVersionId: String = ""
+
+    private val actions by lazy {
+        LauncherActions(
+            navigate = { tab -> updateState { copy(tab = tab) } },
+            setFilter = { filter -> updateState { copy(filter = filter) } },
+            selectVersion = ::selectVersion,
+            refreshCatalog = ::loadVersionCatalog,
+            installVersion = ::installVersion,
+            play = ::onPlayPressed,
+            installRuntime = ::installRuntimeForSelectedVersion,
+            signInMicrosoft = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
+            manageLocalAccounts = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
+            prepareProfile = ::prepareLaunchProfile,
+            probeJvm = ::probeJvmBridge,
+            testJvm = ::runJliRuntimeSmokeTest,
+            testGraphics = { startActivity(Intent(this, EngineDiagnosticsActivity::class.java)) },
+            testPojav = { startActivity(Intent(this, PojavEngineDiagnosticsActivity::class.java)) },
+            setDarkTheme = ::setDarkTheme,
+            setKeepScreenOn = ::setKeepScreenOn,
+            dismissDialog = { updateState { copy(dialog = null) } },
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = VersionManifestRepository(applicationContext)
         LocalAccountRepository.restoreSelectedSession(this)
-        selectedVersionId = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
-        setContentView(createContentView())
+        val prefs = getPreferences(MODE_PRIVATE)
+        val settingsPrefs = getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE)
+        val selected = prefs.getString(KEY_SELECTED_VERSION, "").orEmpty()
+        uiState.value = uiState.value.copy(
+            selectedVersionId = selected,
+            darkTheme = settingsPrefs.getBoolean(KEY_DARK_THEME, true),
+            keepScreenOn = settingsPrefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
+            accountStatus = accountStatusSummary(),
+        )
+        applyKeepScreenOn(uiState.value.keepScreenOn)
+        setContent {
+            SallyLauncherRoot(state = uiState.value, actions = actions)
+        }
         updateRuntimeStatus()
-        updateAccountStatus()
         loadVersionCatalog()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::accountStatusText.isInitialized) updateAccountStatus()
+        LocalAccountRepository.restoreSelectedSession(this)
+        updateAccountStatus()
+        refreshInstalledVersionsAsync()
     }
 
     override fun onDestroy() {
@@ -91,390 +103,233 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun createContentView(): View {
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            clipToPadding = false
-            setPadding(dp(20), dp(22), dp(20), dp(28))
-        }
-        val page = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        scroll.addView(page)
+    private inline fun updateState(reducer: LauncherUiState.() -> LauncherUiState) {
+        uiState.value = uiState.value.reducer()
+    }
 
-        page.addView(textView("SALLY LAUNCHER", 12f, bold = true, color = color(com.google.android.material.R.attr.colorPrimary)).apply {
-            letterSpacing = 0.14f
-        })
-        addGap(page, 10)
-        page.addView(textView("Your Java world.", 32f, bold = true))
-        addGap(page, 8)
-        page.addView(textView("A clean starting point for Minecraft: Java Edition.", 15f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
-        addGap(page, 26)
+    private fun showDialog(dialog: LauncherDialog) = updateState { copy(dialog = dialog) }
 
-        val versionCard = card()
-        val versionContent = cardContent(versionCard)
-        versionContent.addView(sectionLabel("VERSION CATALOG"))
-        addGap(versionContent, 8)
-        versionContent.addView(textView("Choose a Minecraft version", 20f, bold = true))
-        addGap(versionContent, 6)
-        versionContent.addView(textView("Browse official releases and snapshots.", 14f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
-        addGap(versionContent, 18)
-
-        val textInputLayout = TextInputLayout(this).apply {
-            hint = "Minecraft version"
-            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
-            endIconMode = TextInputLayout.END_ICON_DROPDOWN_MENU
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        versionInput = MaterialAutoCompleteTextView(this).apply {
-            threshold = 0
-            keyListener = null
-            setTextColor(color(com.google.android.material.R.attr.colorOnSurface))
-            setOnClickListener { showDropDown() }
-            setOnFocusChangeListener { _, hasFocus -> if (hasFocus && adapter != null && adapter!!.count > 0) showDropDown() }
-            setText(selectedVersionId.ifBlank { "Loading version catalog…" }, false)
-        }
-        textInputLayout.addView(versionInput)
-        versionContent.addView(textInputLayout)
-        versionInput.setOnItemClickListener(AdapterView.OnItemClickListener { _, _, position, _ ->
-            versions.getOrNull(position)?.let { selectVersion(it) }
-        })
-
-        addGap(versionContent, 14)
-        val actionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-        refreshButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Refresh"
-            isAllCaps = false
-            contentDescription = "Refresh official Minecraft versions"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = dp(8)
-            }
-            setOnClickListener { loadVersionCatalog() }
-        }
-        playButton = MaterialButton(this).apply {
-            text = "Play"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener { onPlayPressed() }
-        }
-        actionRow.addView(refreshButton)
-        actionRow.addView(playButton)
-        versionContent.addView(actionRow)
-        addGap(versionContent, 8)
-        installButton = MaterialButton(this).apply {
-            text = "Install version files"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { installSelectedVersion() }
-        }
-        versionContent.addView(installButton)
-        addGap(versionContent, 12)
-        statusText = textView("Loading official version catalog…", 13f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        versionContent.addView(statusText)
-        page.addView(versionCard, fullWidth())
-
-        addGap(page, 18)
-        val engineCard = card()
-        val engineContent = cardContent(engineCard)
-        engineContent.addView(sectionLabel("ENGINE STATUS"))
-        addGap(engineContent, 8)
-        engineContent.addView(textView("NATIVE ENGINE · Pojav / JLI", 19f, bold = true))
-        addGap(engineContent, 6)
-        engineContent.addView(textView(
-            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Use Microsoft sign-in for authenticated online play, or create a local/offline profile for single-player and servers configured to allow offline identities.",
-            14f,
-            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
-        ))
-        addGap(engineContent, 10)
-        accountStatusText = textView(
-            "Checking active account…",
-            13f,
-            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
-        )
-        engineContent.addView(accountStatusText)
-        addGap(engineContent, 8)
-        signInButton = MaterialButton(this).apply {
-            text = "Sign in with Microsoft"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { startActivity(Intent(this@MainActivity, MicrosoftLoginActivity::class.java)) }
-        }
-        engineContent.addView(signInButton)
-        addGap(engineContent, 8)
-        localAccountButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Manage local accounts"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { startActivity(Intent(this@MainActivity, LocalAccountActivity::class.java)) }
-        }
-        engineContent.addView(localAccountButton)
-        addGap(engineContent, 12)
-        prepareLaunchButton = MaterialButton(this).apply {
-            text = "Prepare launch profile"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { prepareLaunchProfile() }
-        }
-        engineContent.addView(prepareLaunchButton)
-        addGap(engineContent, 8)
-        jvmBridgeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Probe installed JVM bridge"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { probeJvmBridge() }
-        }
-        engineContent.addView(jvmBridgeButton)
-        addGap(engineContent, 8)
-        jvmSmokeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Run Java runtime self-test"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { runJliRuntimeSmokeTest() }
-        }
-        engineContent.addView(jvmSmokeButton)
-        addGap(engineContent, 8)
-        engineDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Test graphics & input bridge"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, com.sally.launcher.core.engine.EngineDiagnosticsActivity::class.java))
-            }
-        }
-        engineContent.addView(engineDiagnosticsButton)
-        addGap(engineContent, 8)
-        pojavBridgeDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Test Pojav surface bridge"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, com.sally.launcher.core.engine.PojavEngineDiagnosticsActivity::class.java))
-            }
-        }
-        engineContent.addView(pojavBridgeDiagnosticsButton)
-        addGap(engineContent, 8)
-        engineStatusText = textView(
-            "Profile not prepared. Install version files and a compatible Java runtime first.",
-            13f,
-            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
-        )
-        engineContent.addView(engineStatusText)
-        page.addView(engineCard, fullWidth())
-
-        addGap(page, 18)
-        val runtimeCard = card()
-        val runtimeContent = cardContent(runtimeCard)
-        runtimeContent.addView(sectionLabel("JAVA RUNTIME"))
-        addGap(runtimeContent, 8)
-        runtimeContent.addView(textView("Install a compatible runtime", 20f, bold = true))
-        addGap(runtimeContent, 6)
-        runtimeContent.addView(textView(
-            "Reads the selected Minecraft version's Java requirement, chooses an Android ABI-matched runtime, verifies its SHA-256 digest, and installs it in app-private storage.",
-            14f,
-            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
-        ))
-        addGap(runtimeContent, 14)
-        runtimeButton = MaterialButton(this).apply {
-            text = "Install compatible Java runtime"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { installRuntimeForSelectedVersion() }
-        }
-        runtimeContent.addView(runtimeButton)
-        addGap(runtimeContent, 10)
-        runtimeStatusText = textView("Checking installed runtimes…", 13f, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        runtimeContent.addView(runtimeStatusText)
-        page.addView(runtimeCard, fullWidth())
-
-        addGap(page, 18)
-        page.addView(textView("STAGE 9  ·  JVM STARTUP SELF-TEST", 11f, bold = true, color = color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
-        return scroll
+    private fun showMessage(title: String, message: String, confirmText: String = "OK", onConfirm: (() -> Unit)? = null) {
+        showDialog(LauncherDialog(title = title, message = message, confirmText = confirmText, onConfirm = onConfirm))
     }
 
     private fun loadVersionCatalog() {
-        refreshButton.isEnabled = false
-        refreshButton.text = "Loading…"
-        statusText.text = "Connecting to the official version catalog…"
+        updateState { copy(loadingCatalog = true, refreshing = true, catalogStatus = "Connecting to the official version catalog…") }
         ioExecutor.execute {
             val result = runCatching { repository.fetchCatalog() }
+            val existingCatalog = result.getOrNull()?.versions ?: catalogVersions
+            val installed = scanInstalledVersions(existingCatalog)
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                refreshButton.isEnabled = true
-                refreshButton.text = "Refresh"
-                result.onSuccess(::showCatalog).onFailure { error ->
-                    statusText.text = "Could not load versions. Check your connection and retry."
+                updateState {
+                    copy(
+                        loadingCatalog = false,
+                        refreshing = false,
+                        catalogStatus = result.fold(
+                            { catalog -> "${catalog.versions.size} official versions · ${if (catalog.loadedFromCache) "saved catalog (offline)" else "catalog updated"}" },
+                            { "Could not refresh the catalog. Showing installed versions; check your connection and retry." },
+                        ),
+                        versions = mergeVersions(existingCatalog, installed),
+                        installedVersions = installed,
+                    )
+                }
+                result.onSuccess { catalog ->
+                    catalogVersions = catalog.versions
+                    latestReleaseId = catalog.latestReleaseId
+                    latestSnapshotId = catalog.latestSnapshotId
+                    val persisted = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
+                    val preferredInstalled = installed.firstOrNull { it.id == persisted }
+                        ?: installed.firstOrNull { it.id == catalog.latestReleaseId }
+                        ?: installed.firstOrNull()
+                    val preferred = preferredInstalled
+                        ?: catalog.versions.firstOrNull { it.id == persisted }
+                        ?: catalog.versions.firstOrNull { it.id == catalog.latestReleaseId }
+                        ?: catalog.versions.firstOrNull()
+                    if (preferred != null) {
+                        if (preferredInstalled != null) selectVersion(preferred.id)
+                        else updateState { copy(selectedVersionId = preferred.id, managerSelectedVersionId = preferred.id) }
+                    }
+                }.onFailure { error ->
+                    if (installed.isNotEmpty()) {
+                        updateState { copy(catalogStatus = "Offline catalog unavailable · ${installed.size} installed versions ready") }
+                    }
                     Toast.makeText(this, error.message ?: "Version catalog unavailable", Toast.LENGTH_LONG).show()
                 }
+                updateRuntimeStatus()
             }
         }
     }
 
-    private fun showCatalog(catalog: VersionCatalog) {
-        versions = catalog.versions
-        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, versions.map { it.displayLabel() })
-        versionInput.setAdapter(adapter)
-        versionInput.setOnClickListener { if (adapter.count > 0) versionInput.showDropDown() }
+    private fun mergeVersions(catalog: List<MinecraftVersion>, installed: List<MinecraftVersion>): List<MinecraftVersion> {
+        val byId = LinkedHashMap<String, MinecraftVersion>()
+        catalog.forEach { byId[it.id] = it }
+        installed.forEach { installedVersion -> byId.putIfAbsent(installedVersion.id, installedVersion) }
+        return byId.values.toList()
+    }
 
-        val preferred = versions.firstOrNull { it.id == selectedVersionId }
-            ?: versions.firstOrNull { it.id == catalog.latestReleaseId }
-            ?: versions.firstOrNull()
-        if (preferred != null) selectVersion(preferred)
+    private fun scanInstalledVersions(knownVersions: List<MinecraftVersion>): List<MinecraftVersion> {
+        val root = LauncherStorage.minecraftRoot(applicationContext)
+        val versionsDir = File(root, "versions")
+        if (!versionsDir.isDirectory) return emptyList()
+        val byId = knownVersions.associateBy { it.id }
+        val found = versionsDir.listFiles().orEmpty().mapNotNull { directory ->
+            if (!directory.isDirectory) return@mapNotNull null
+            val id = directory.name
+            val metadataFile = File(directory, "$id.json")
+            val jar = File(directory, "$id.jar")
+            if (!metadataFile.isFile || metadataFile.length() <= 0L || !jar.isFile || jar.length() <= 0L) return@mapNotNull null
+            val metadata = runCatching { JSONObject(metadataFile.readText(Charsets.UTF_8)) }.getOrNull() ?: return@mapNotNull null
+            if (metadata.optString("id").let { it.isNotBlank() && it != id }) return@mapNotNull null
+            val official = byId[id]
+            MinecraftVersion(
+                id = id,
+                type = official?.type ?: metadata.optString("type", "release").ifBlank { "release" },
+                url = official?.url.orEmpty(),
+                releaseTime = official?.releaseTime ?: metadata.optString("releaseTime", metadata.optString("time", "")),
+            )
+        }
+        val order = knownVersions.mapIndexed { index, version -> version.id to index }.toMap()
+        return found.sortedWith(compareBy<MinecraftVersion> { order[it.id] ?: Int.MAX_VALUE }.thenByDescending { it.releaseTime }.thenByDescending { it.id })
+    }
 
-        statusText.text = if (catalog.loadedFromCache) {
-            "${versions.size} versions · showing saved catalog (offline)"
-        } else {
-            "${versions.size} versions available · official catalog updated"
+    private fun refreshInstalledVersionsAsync() {
+        ioExecutor.execute {
+            val installed = scanInstalledVersions(catalogVersions)
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState {
+                    val selectedStillInstalled = installed.any { it.id == selectedVersionId }
+                    val fallback = installed.firstOrNull { it.id == latestReleaseId } ?: installed.firstOrNull()
+                    val normalizedSelected = if (installed.isNotEmpty() && !selectedStillInstalled) fallback?.id.orEmpty() else selectedVersionId
+                    if (normalizedSelected != selectedVersionId && normalizedSelected.isNotBlank()) {
+                        getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, normalizedSelected).apply()
+                    }
+                    copy(installedVersions = installed, versions = mergeVersions(catalogVersions, installed), selectedVersionId = normalizedSelected)
+                }
+                updateRuntimeStatus()
+            }
         }
     }
 
-    private fun selectVersion(version: MinecraftVersion) {
-        selectedVersionId = version.id
-        versionInput.setText(version.displayLabel(), false)
-        getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, version.id).apply()
+    private fun selectVersion(versionId: String) {
+        val current = uiState.value
+        val version = current.versions.firstOrNull { it.id == versionId }
+            ?: current.installedVersions.firstOrNull { it.id == versionId }
+            ?: return
+        val isInstalled = current.installedVersions.any { it.id == version.id }
+        updateState {
+            if (isInstalled) copy(
+                selectedVersionId = version.id,
+                managerSelectedVersionId = version.id,
+            ) else copy(
+                managerSelectedVersionId = version.id,
+            )
+        }
+        if (isInstalled) getPreferences(MODE_PRIVATE).edit().putString(KEY_SELECTED_VERSION, version.id).apply()
     }
 
-    private fun installSelectedVersion() {
-        if (!::versions.isInitialized) {
-            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selected = versions.firstOrNull { it.id == selectedVersionId }
+    private fun selectedVersionForInstall(versionId: String): MinecraftVersion? =
+        uiState.value.versions.firstOrNull { it.id == versionId }
+            ?: uiState.value.installedVersions.firstOrNull { it.id == versionId }
+
+    private fun installVersion(versionId: String) {
+        val selected = selectedVersionForInstall(versionId)
         if (selected == null) {
-            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
+            showMessage("Version not found", "Refresh the official catalog and select a version again.")
             return
         }
-        installButton.isEnabled = false
-        refreshButton.isEnabled = false
-        playButton.isEnabled = false
-        runtimeButton.isEnabled = false
-        installButton.text = "Installing…"
-        statusText.text = "Preparing ${selected.id}…"
+        updateState { copy(managerSelectedVersionId = versionId, busyAction = "install:$versionId", catalogStatus = "Preparing Minecraft $versionId…") }
         ioExecutor.execute {
             val result = runCatching {
                 VersionInstaller(applicationContext).installVersion(selected) { message ->
                     mainHandler.post {
-                        if (!isFinishing && !isDestroyed) statusText.text = message
+                        if (!isFinishing && !isDestroyed) updateState { copy(catalogStatus = message) }
                     }
                 }
             }
+            val newInstalled = scanInstalledVersions(catalogVersions)
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                installButton.isEnabled = true
-                refreshButton.isEnabled = true
-                playButton.isEnabled = true
-                runtimeButton.isEnabled = true
-                installButton.text = "Install version files"
-                result.onSuccess { installed ->
-                    statusText.text = "${installed.versionId}: ${installed.libraryFiles} library files and ${installed.assetFiles} assets available. SHA-1 is checked when official metadata provides it; install a compatible Java runtime separately, and the game engine is still pending."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Version files installed")
-                        .setMessage("Downloaded the Minecraft client, common Java library artifacts, and asset objects for ${installed.versionId}. SHA-1 is checked wherever official metadata provides a hash. Bytes downloaded this run: ${installed.downloadedBytes / (1024 * 1024)} MB. A separate Android Java runtime installer is available below; the JVM/JNI launch bridge, renderer, and input integration are still pending.")
-                        .setPositiveButton("OK", null)
-                        .show()
-                }.onFailure { error ->
-                    statusText.text = "Install failed. Check your connection/storage and retry."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Download failed")
-                        .setMessage(error.message ?: "Could not install Minecraft version files.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                updateState {
+                    copy(
+                        busyAction = null,
+                        installedVersions = newInstalled,
+                        versions = mergeVersions(catalogVersions, newInstalled),
+                        filter = VersionFilter.INSTALLED,
+                        catalogStatus = result.fold(
+                            { "${it.versionId} installed · ${it.libraryFiles} libraries · ${it.assetFiles} assets" },
+                            { "Install failed. Check connection and free storage." },
+                        ),
+                    )
                 }
+                result.onSuccess { installed ->
+                    selectVersion(installed.versionId)
+                    showMessage(
+                        "Version installed",
+                        "Minecraft ${installed.versionId} is installed. Library files: ${installed.libraryFiles}. Asset files: ${installed.assetFiles}. Downloaded this run: ${installed.downloadedBytes / (1024 * 1024)} MB. Select it from Play to launch, and install a compatible Java runtime if needed.",
+                    )
+                }.onFailure { error -> showMessage("Installation failed", error.message ?: "Could not install Minecraft version files.") }
+                updateRuntimeStatus()
             }
         }
     }
 
-    private fun installRuntimeForSelectedVersion() {
-        if (!::versions.isInitialized) {
-            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selected = versions.firstOrNull { it.id == selectedVersionId }
-        if (selected == null) {
-            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
-            return
-        }
+    private fun selectedInstalledVersion(): MinecraftVersion? {
+        val state = uiState.value
+        return state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
+    }
 
-        runtimeButton.isEnabled = false
-        installButton.isEnabled = false
-        refreshButton.isEnabled = false
-        playButton.isEnabled = false
-        runtimeButton.text = "Installing runtime…"
-        runtimeStatusText.text = "Preparing a compatible Java runtime for ${selected.id}…"
+    private fun installRuntimeForSelectedVersion() {
+        val selected = selectedInstalledVersion()
+        if (selected == null) {
+            showMessage("No installed version", "Install a Minecraft version first. Open Versions and choose a release, snapshot, beta, or alpha.", "Open Versions") {
+                updateState { copy(tab = LauncherTab.VERSIONS) }
+            }
+            return
+        }
+        updateState { copy(busyAction = "runtime", runtimeStatus = "Preparing a compatible Java runtime for ${selected.id}…") }
         ioExecutor.execute {
             val result = runCatching {
                 RuntimeManager(applicationContext).installForVersion(selected) { message ->
-                    mainHandler.post {
-                        if (!isFinishing && !isDestroyed) runtimeStatusText.text = message
-                    }
+                    mainHandler.post { if (!isFinishing && !isDestroyed) updateState { copy(runtimeStatus = message) } }
                 }
             }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                runtimeButton.isEnabled = true
-                installButton.isEnabled = true
-                refreshButton.isEnabled = true
-                playButton.isEnabled = true
-                runtimeButton.text = "Install compatible Java runtime"
+                updateState { copy(busyAction = null) }
                 updateRuntimeStatus()
                 result.onSuccess { installed ->
-                    runtimeStatusText.text = "${installed.displayName()} installed and verified. JVM/renderer bridge still pending."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Java runtime ready")
-                        .setMessage(
-                            "Java ${installed.majorVersion} for Android ${installed.architecture} was downloaded, SHA-256 verified, and unpacked to app-private storage for Minecraft ${selected.id}.\n\nThis does not launch the game yet: the JVM/JNI bridge, renderer, and input path still need integration."
-                        )
-                        .setPositiveButton("OK", null)
-                        .show()
+                    updateState { copy(runtimeStatus = "${installed.displayName()} installed and verified") }
+                    showMessage("Java runtime ready", "Java ${installed.majorVersion} for Android ${installed.architecture} was downloaded, SHA-256 verified, and installed. Run the Java self-test from DEV if startup fails.")
                 }.onFailure { error ->
-                    runtimeStatusText.text = "Runtime installation failed. Check connection and free storage."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Runtime installation failed")
-                        .setMessage(error.message ?: "Could not install a compatible Java runtime.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                    updateState { copy(runtimeStatus = "Runtime installation failed. Check connection and free storage.") }
+                    showMessage("Runtime installation failed", error.message ?: "Could not install a compatible Java runtime.")
                 }
             }
         }
     }
 
     private fun updateRuntimeStatus() {
-        if (!::runtimeStatusText.isInitialized) return
-        val runtimes = runCatching { RuntimeManager(applicationContext).installedRuntimes() }
-            .getOrDefault(emptyList())
-        runtimeStatusText.text = if (runtimes.isEmpty()) {
-            "No verified Java runtimes installed on this device."
-        } else {
-            "Installed: " + runtimes.joinToString(" · ") { it.displayName() }
+        ioExecutor.execute {
+            val runtimes = runCatching { RuntimeManager(applicationContext).installedRuntimes() }.getOrDefault(emptyList())
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                updateState {
+                    copy(runtimeStatus = if (runtimes.isEmpty()) "No verified Java runtimes installed on this device." else "Installed: " + runtimes.joinToString(" · ") { it.displayName() })
+                }
+            }
         }
     }
 
     private fun prepareLaunchProfile() {
-        if (!::versions.isInitialized) {
-            Toast.makeText(this, "Wait for the version catalog to finish loading.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        val selected = selectedInstalledVersion()
         if (selected == null) {
-            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
+            showMessage("No installed version", "Install Minecraft version files before preparing a launch profile.")
             return
         }
-
-        prepareLaunchButton.isEnabled = false
-        prepareLaunchButton.text = "Resolving profile…"
-        engineStatusText.text = "Reading version metadata, checking runtime and resolving libraries…"
-        installButton.isEnabled = false
-        runtimeButton.isEnabled = false
-        refreshButton.isEnabled = false
-        playButton.isEnabled = false
+        updateState { copy(busyAction = "prepare", engineStatus = "Resolving version metadata, AWT assets, runtime, and libraries…") }
         ioExecutor.execute {
             val result = runCatching {
-                // This button may be used before any game Surface exists. Install the bundled
-                // runtime assets before inspecting them so a clean first launch does not report
-                // Caciocavallo/GLFW as missing merely because the game activity has not opened.
                 val minecraftRoot = LauncherStorage.minecraftRoot(applicationContext)
                 val payloadInstaller = PojavEnginePayloadInstaller(applicationContext)
                 payloadInstaller.installCaciocavalloComponents(minecraftRoot)
@@ -486,173 +341,89 @@ class MainActivity : AppCompatActivity() {
             }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                prepareLaunchButton.isEnabled = true
-                prepareLaunchButton.text = "Prepare launch profile"
-                installButton.isEnabled = true
-                runtimeButton.isEnabled = true
-                refreshButton.isEnabled = true
-                playButton.isEnabled = true
-                result.onSuccess { (profile, launchSpec) ->
-                    engineStatusText.text = "Native launch request assembled: ${launchSpec.argv.size} argv entries, ${launchSpec.environment.size} environment values, ${launchSpec.blockers.size} engine blockers remain."
-                    val blockers = launchSpec.blockers.joinToString("\n") { "• $it" }
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Native launch request prepared")
-                        .setMessage(
-                            "Minecraft ${profile.versionId}\n" +
-                                "Required Java: ${profile.requiredJavaMajor}\n" +
-                                "Selected runtime: Java ${profile.runtimeMajor}\n" +
-                                "Main class: ${profile.mainClass}\n" +
-                                "Classpath entries: ${profile.classpathEntries.size}\n" +
-                                "JVM arguments: ${profile.jvmArguments.size}\n" +
-                                "Game arguments: ${profile.gameArguments.size}\n" +
-                                "JLI argv entries: ${launchSpec.argv.size}\n" +
-                                "Native library directories: ${launchSpec.nativeLibraryDirectories.size}\n" +
-                                "Working directory: ${launchSpec.workingDirectory.absolutePath}\n" +
-                                "Assets index: ${profile.assetIndexId}\n" +
-                                "Valid account profile: ${profile.hasValidAccountSession}\n" +
-                                "Account type: ${profile.accountType ?: "none"}\n\n" +
-                                "Remaining blockers:\n$blockers\n\n" +
-                                "Session tokens are never displayed in diagnostics. The game activity invokes native JLI only when all checks pass and the Pojav surface is bound."
-                        )
-                        .setPositiveButton("OK", null)
-                        .show()
+                updateState { copy(busyAction = null) }
+                result.onSuccess { (profile, spec) ->
+                    val blockers = spec.blockers.joinToString("\n") { "• $it" }.ifBlank { "• None reported by the spec builder" }
+                    val summary = "Minecraft ${profile.versionId}\nRequired Java: ${profile.requiredJavaMajor}\nSelected runtime: Java ${profile.runtimeMajor}\nMain class: ${profile.mainClass}\nClasspath entries: ${profile.classpathEntries.size}\nJVM arguments: ${profile.jvmArguments.size}\nGame arguments: ${profile.gameArguments.size}\nJLI argv entries: ${spec.argv.size}\nNative library directories: ${spec.nativeLibraryDirectories.size}\nWorking directory: ${spec.workingDirectory.absolutePath}\nAssets index: ${profile.assetIndexId}\nValid account profile: ${profile.hasValidAccountSession}\nAccount type: ${profile.accountType ?: "none"}\n\nRemaining blockers:\n$blockers\n\nNo session tokens are included in diagnostics."
+                    updateState { copy(engineStatus = "Launch profile checked for ${profile.versionId} · ${spec.blockers.size} blocker(s)") }
+                    showMessage("Launch profile prepared", summary)
                 }.onFailure { error ->
-                    engineStatusText.text = "Profile check failed. Install version files/runtime, then retry."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("Cannot prepare launch profile")
-                        .setMessage(error.message ?: "The selected version is missing required launch files.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                    updateState { copy(engineStatus = "Profile check failed: ${error.message ?: "unknown error"}") }
+                    showMessage("Cannot prepare launch profile", error.message ?: "The selected version is missing required launch files.")
                 }
             }
         }
     }
 
     private fun probeJvmBridge() {
-        if (!::jvmBridgeButton.isInitialized) return
-        jvmBridgeButton.isEnabled = false
-        jvmBridgeButton.text = "Checking JVM libraries…"
-        engineStatusText.text = "Finding an installed runtime and checking its native JLI/JVM libraries…"
+        updateState { copy(busyAction = "probe", engineStatus = "Checking installed JVM's native JLI/JVM libraries…") }
         ioExecutor.execute {
             val result = runCatching {
-                val runtime = RuntimeManager(applicationContext).installedRuntimes()
-                    .maxByOrNull { it.majorVersion }
-                    ?: throw IllegalStateException("No verified Java runtime is installed. Install a compatible runtime first.")
+                val runtime = RuntimeManager(applicationContext).installedRuntimes().maxByOrNull { it.majorVersion }
+                    ?: error("No verified Java runtime is installed. Install a compatible runtime first.")
                 runtime to JliBridgeDiagnostics.probe(runtime.home)
             }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
-                jvmBridgeButton.isEnabled = true
-                jvmBridgeButton.text = "Probe installed JVM bridge"
+                updateState { copy(busyAction = null) }
                 result.onSuccess { (runtime, probe) ->
-                    engineStatusText.text = if (probe.available) {
-                        "JLI loader probe passed for ${runtime.displayName()}. This verifies library availability only; actual launch still requires a valid account profile, a bound surface, and device-tested renderer compatibility."
-                    } else {
-                        "JLI loader probe failed for ${runtime.displayName()}. See diagnostic details."
-                    }
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle(if (probe.available) "JVM native loader available" else "JVM native loader not ready")
-                        .setMessage(
-                            "Runtime: ${runtime.displayName()}\n" +
-                                "Path: ${runtime.home.absolutePath}\n\n" +
-                                probe.details +
-                                "\n\nThis probe only maps native runtime libraries and checks JLI_Launch. It does not start a JVM or launch Minecraft."
-                        )
-                        .setPositiveButton("OK", null)
-                        .show()
+                    updateState { copy(engineStatus = if (probe.available) "JLI loader probe passed for ${runtime.displayName()} (library availability only)." else "JLI loader probe failed for ${runtime.displayName()}.") }
+                    showMessage(if (probe.available) "JVM native loader available" else "JVM native loader not ready", "Runtime: ${runtime.displayName()}\nPath: ${runtime.home.absolutePath}\n\n${probe.details}\n\nThis probe maps native libraries and checks JLI_Launch. It does not start Minecraft.")
                 }.onFailure { error ->
-                    engineStatusText.text = "JLI loader probe could not run. Install and verify a Java runtime first."
-                    MaterialAlertDialogBuilder(this)
-                        .setTitle("JVM bridge probe failed")
-                        .setMessage(error.message ?: "Could not inspect the installed runtime.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                    updateState { copy(engineStatus = "JLI probe failed: ${error.message ?: "unknown error"}") }
+                    showMessage("JVM bridge probe failed", error.message ?: "Could not inspect the installed runtime.")
                 }
             }
         }
     }
 
     private fun runJliRuntimeSmokeTest() {
-        if (!::jvmSmokeButton.isInitialized) return
         if (jvmSmokeReceiver != null) return
-        jvmSmokeButton.isEnabled = false
-        jvmSmokeButton.text = "Starting isolated JVM test…"
-        engineStatusText.text = "Starting a disposable process for Java -version…"
-
+        updateState { copy(busyAction = "smoke", engineStatus = "Starting a disposable process for Java -version…") }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != JliRuntimeSmokeService.ACTION_RESULT) return
                 clearJliSmokeReceiver()
-                jvmSmokeButton.isEnabled = true
-                jvmSmokeButton.text = "Run Java runtime self-test"
                 val passed = intent.getBooleanExtra(JliRuntimeSmokeService.EXTRA_PASSED, false)
                 val runtime = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME).orEmpty()
                 val runtimeHome = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_RUNTIME_HOME).orEmpty()
                 val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
                 val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
-                engineStatusText.text = if (passed) {
-                    "JVM startup test passed for $runtime. This does not prove Minecraft will render; actual launch also requires a valid Microsoft or local account profile and a successful device-side game-surface test."
-                } else {
-                    "JVM startup test failed or is unavailable for $runtime. See the diagnostic log for details."
-                }
-                MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle(if (passed) "Java runtime test passed" else "Java runtime test failed")
-                    .setMessage(
-                        "Runtime: $runtime\n" +
-                            (if (runtimeHome.isBlank()) "" else "Path: $runtimeHome\n") +
-                            "\n$details\n\nSaved diagnostic log: $logPath\n\n" +
-                            "The test runs `JLI_Launch` with only `-version` in a disposable Android process. It does not start Minecraft."
+                updateState {
+                    copy(
+                        busyAction = null,
+                        engineStatus = if (passed) "JVM startup test passed for $runtime. Minecraft rendering is not tested by this check." else "JVM startup test failed for $runtime. See the diagnostic log.",
                     )
-                    .setPositiveButton("OK", null)
-                    .show()
+                }
+                showMessage(if (passed) "Java runtime test passed" else "Java runtime test failed", "Runtime: $runtime\n${if (runtimeHome.isBlank()) "" else "Path: $runtimeHome\n"}\n$details\n\nSaved diagnostic log: $logPath\n\nThe test uses JLI_Launch with -version in a disposable Android process. It does not start Minecraft.")
             }
         }
         jvmSmokeReceiver = receiver
         val filter = IntentFilter(JliRuntimeSmokeService.ACTION_RESULT)
         try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            else {
                 @Suppress("DEPRECATION")
                 registerReceiver(receiver, filter)
             }
         } catch (error: Exception) {
             clearJliSmokeReceiver()
-            jvmSmokeButton.isEnabled = true
-            jvmSmokeButton.text = "Run Java runtime self-test"
-            engineStatusText.text = "Could not listen for the isolated JVM diagnostic result."
-            Toast.makeText(this, error.message ?: "Could not register JVM test receiver", Toast.LENGTH_LONG).show()
+            updateState { copy(busyAction = null, engineStatus = "Could not listen for the JVM diagnostic result.") }
+            showMessage("JVM test unavailable", error.message ?: "Could not register diagnostic receiver.")
             return
         }
-
         val timeout = Runnable {
             clearJliSmokeReceiver()
-            jvmSmokeButton.isEnabled = true
-            jvmSmokeButton.text = "Run Java runtime self-test"
-            engineStatusText.text = "JVM test process did not return a result. It may have crashed during JVM initialization."
-            // Show whatever the JVM managed to print (and a fresh hs_err crash report) in the dialog.
+            updateState { copy(busyAction = null, engineStatus = "JVM test process did not return a result. It may have crashed during initialization.") }
             val diagnostics = runCatching {
-                val log = java.io.File(LauncherStorage.diagnosticsRoot(applicationContext), "jli-version.log")
+                val log = File(LauncherStorage.diagnosticsRoot(applicationContext), "jli-version.log")
                 val logText = if (log.isFile) log.readText().takeLast(2500) else ""
-                val crashReport = java.io.File(cacheDir, "jli-version-work")
-                    .listFiles { file -> file.name.startsWith("hs_err") }
+                val crashReport = File(cacheDir, "jli-version-work").listFiles { file -> file.name.startsWith("hs_err") }
                     ?.filter { System.currentTimeMillis() - it.lastModified() < 120_000L }
-                    ?.maxByOrNull { it.lastModified() }
-                    ?.readText()?.take(2500).orEmpty()
-                buildString {
-                    if (logText.isNotBlank()) append("\n\nJVM output:\n").append(logText)
-                    if (crashReport.isNotBlank()) append("\n\nCrash report (hs_err):\n").append(crashReport)
-                }
+                    ?.maxByOrNull { it.lastModified() }?.readText()?.take(2500).orEmpty()
+                buildString { if (logText.isNotBlank()) append("\n\nJVM output:\n").append(logText); if (crashReport.isNotBlank()) append("\n\nCrash report:\n").append(crashReport) }
             }.getOrDefault("")
-            MaterialAlertDialogBuilder(this)
-                .setTitle("JVM test timed out")
-                .setMessage(
-                    "The separate JVM diagnostic process did not report a result within 45 seconds. " +
-                        "Sally's main UI process is isolated from that native test. Check Android logcat and the app-private diagnostics folder." +
-                        diagnostics
-                )
-                .setPositiveButton("OK", null)
-                .show()
+            showMessage("JVM test timed out", "The separate JVM diagnostic process did not report a result within 45 seconds. Check Android logcat and the diagnostics folder.$diagnostics")
         }
         jvmSmokeTimeout = timeout
         mainHandler.postDelayed(timeout, 45_000L)
@@ -660,55 +431,52 @@ class MainActivity : AppCompatActivity() {
             startService(Intent(this, JliRuntimeSmokeService::class.java))
         } catch (error: Exception) {
             clearJliSmokeReceiver()
-            jvmSmokeButton.isEnabled = true
-            jvmSmokeButton.text = "Run Java runtime self-test"
-            engineStatusText.text = "Could not start the isolated JVM diagnostic process."
-            MaterialAlertDialogBuilder(this)
-                .setTitle("JVM test unavailable")
-                .setMessage(error.message ?: "Could not start the diagnostic service.")
-                .setPositiveButton("OK", null)
-                .show()
+            updateState { copy(busyAction = null, engineStatus = "Could not start the isolated JVM diagnostic process.") }
+            showMessage("JVM test unavailable", error.message ?: "Could not start the diagnostic service.")
         }
     }
 
     private fun clearJliSmokeReceiver() {
         jvmSmokeTimeout?.let(mainHandler::removeCallbacks)
         jvmSmokeTimeout = null
-        jvmSmokeReceiver?.let { receiver ->
-            runCatching { unregisterReceiver(receiver) }
-        }
+        jvmSmokeReceiver?.let { runCatching { unregisterReceiver(it) } }
         jvmSmokeReceiver = null
     }
 
     private fun onPlayPressed() {
-        if (!::versions.isInitialized || selectedVersionId.isBlank()) {
-            Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        val selected = selectedInstalledVersion()
         if (selected == null) {
-            Toast.makeText(this, "The selected Minecraft version is no longer in the loaded catalog.", Toast.LENGTH_LONG).show()
+            showDialog(
+                LauncherDialog(
+                    title = "No installed version",
+                    message = "Open Versions, choose the Vanilla / Release, Snapshot, Old Beta, or Old Alpha channel, and install a version first.",
+                    confirmText = "Open Versions",
+                    onConfirm = { updateState { copy(tab = LauncherTab.VERSIONS, filter = VersionFilter.RELEASE) } },
+                    dismissText = "Cancel",
+                ),
+            )
             return
         }
         val session = MinecraftLaunchSessionStore.current()
         if (session == null) {
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Choose an account")
-                .setMessage("Sign in with Microsoft for an authenticated Minecraft Java profile, or use a local/offline profile for single-player and servers that explicitly allow offline mode.")
-                .setNegativeButton("Cancel", null)
-                .setNeutralButton("Local account") { _, _ -> startActivity(Intent(this, LocalAccountActivity::class.java)) }
-                .setPositiveButton("Microsoft sign-in") { _, _ -> startActivity(Intent(this, MicrosoftLoginActivity::class.java)) }
-                .show()
+            showDialog(
+                LauncherDialog(
+                    title = "Choose an account",
+                    message = "Sign in with Microsoft for authenticated online play, or use a local/offline profile for single-player and servers explicitly configured to allow offline identities.",
+                    confirmText = "Microsoft sign-in",
+                    onConfirm = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
+                    dismissText = "Cancel",
+                    neutralText = "Local account",
+                    onNeutral = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
+                ),
+            )
             return
         }
         val sessionError = session.validationError()
         if (sessionError != null) {
             MinecraftLaunchSessionStore.clear()
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Minecraft account profile invalid")
-                .setMessage(sessionError)
-                .setPositiveButton("OK", null)
-                .show()
+            updateAccountStatus()
+            showMessage("Minecraft account profile invalid", sessionError)
             return
         }
         startActivity(Intent(this, PojavGameActivity::class.java).apply {
@@ -719,68 +487,43 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun updateAccountStatus() {
-        if (!::accountStatusText.isInitialized) return
+    private fun accountStatusSummary(): String {
         val session = MinecraftLaunchSessionStore.current()
         val problem = session?.validationError()
-        if (problem != null) MinecraftLaunchSessionStore.clear()
-        accountStatusText.text = when {
-            session == null -> "Account: none selected. Choose Microsoft or local/offline account."
+        return when {
+            session == null -> "No account selected. Choose Microsoft or local/offline account."
             problem != null -> "Account profile is invalid: $problem"
             session.accountType == MinecraftAccountType.LOCAL -> "Using ${session.username} · Local/offline account. Online-mode servers require Microsoft authentication."
-            else -> "Signed in as ${session.username} · Microsoft account (token in memory only)."
-        }
-        if (::signInButton.isInitialized) {
-            signInButton.text = if (session?.accountType == MinecraftAccountType.MICROSOFT && problem == null) "Manage / sign out Microsoft account" else "Sign in with Microsoft"
+            else -> "Signed in as ${session.username} · Microsoft account. Session tokens remain in memory only."
         }
     }
 
-    private fun card(): MaterialCardView = MaterialCardView(this).apply {
-        radius = dp(22).toFloat()
-        cardElevation = 0f
-        strokeWidth = dp(1)
-        strokeColor = color(com.google.android.material.R.attr.colorOutlineVariant)
-        setCardBackgroundColor(color(com.google.android.material.R.attr.colorSurface))
+    private fun updateAccountStatus() {
+        val session = MinecraftLaunchSessionStore.current()
+        if (session?.validationError() != null) MinecraftLaunchSessionStore.clear()
+        updateState { copy(accountStatus = accountStatusSummary()) }
     }
 
-    private fun cardContent(card: MaterialCardView): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(18), dp(18), dp(18), dp(18))
-        card.addView(this, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    private fun setDarkTheme(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_DARK_THEME, enabled).apply()
+        updateState { copy(darkTheme = enabled) }
     }
 
-    private fun sectionLabel(text: String): TextView = textView(
-        text,
-        11f,
-        bold = true,
-        color = color(com.google.android.material.R.attr.colorPrimary),
-    ).apply { letterSpacing = 0.12f }
-
-    private fun textView(text: String, sizeSp: Float, bold: Boolean = false, color: Int = color(com.google.android.material.R.attr.colorOnSurface)): TextView = TextView(this).apply {
-        this.text = text
-        textSize = sizeSp
-        setTextColor(color)
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-        includeFontPadding = true
+    private fun setKeepScreenOn(enabled: Boolean) {
+        getSharedPreferences(PREFS_SETTINGS, MODE_PRIVATE).edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
+        applyKeepScreenOn(enabled)
+        updateState { copy(keepScreenOn = enabled) }
     }
 
-    private fun addGap(parent: LinearLayout, heightDp: Int) {
-        parent.addView(View(this), LinearLayout.LayoutParams(1, dp(heightDp)))
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
-
-    private fun fullWidth(): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
-
-    private fun color(attribute: Int): Int {
-        val value = TypedValue()
-        return if (theme.resolveAttribute(attribute, value, true)) value.data else Color.BLACK
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val KEY_SELECTED_VERSION = "selected_minecraft_version"
+        const val KEY_DARK_THEME = "dark_theme"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val PREFS_SETTINGS = "sally_launcher_settings"
     }
 }

@@ -2,198 +2,256 @@ package com.sally.launcher.core.auth
 
 import android.app.Activity
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sally.launcher.SallyMaterialTheme
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.engine.OfflineAccountProfile
 
 /** Manages Pojav-style local/offline identities without claiming that they are authenticated accounts. */
 class LocalAccountActivity : AppCompatActivity() {
-    private lateinit var nameInput: TextInputEditText
-    private lateinit var statusText: TextView
-    private lateinit var accountList: LinearLayout
+    private var accounts by mutableStateOf<List<OfflineAccountProfile>>(emptyList())
+    private var username by mutableStateOf("")
+    private var status by mutableStateOf("No account selected.")
+    private var activeName by mutableStateOf<String?>(null)
+    private var activeType by mutableStateOf<MinecraftAccountType?>(null)
+    private var deleteTarget by mutableStateOf<OfflineAccountProfile?>(null)
+    private var inputError by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildContent())
+        refreshAccounts()
+        setContent {
+            SallyMaterialTheme(darkTheme = getSharedPreferences("sally_launcher_settings", MODE_PRIVATE).getBoolean("dark_theme", true)) {
+                LocalAccountsScreen(
+                    accounts = accounts,
+                    username = username,
+                    status = status,
+                    activeName = activeName,
+                    activeType = activeType,
+                    deleteTarget = deleteTarget,
+                    inputError = inputError,
+                    onUsernameChange = { username = it; inputError = null },
+                    onCreate = ::createAccount,
+                    onActivate = ::activateAccount,
+                    onDeleteRequest = { deleteTarget = it },
+                    onDeleteConfirm = { target ->
+                        LocalAccountRepository.remove(this@LocalAccountActivity, target.username)
+                        deleteTarget = null
+                        setResult(Activity.RESULT_OK)
+                        refreshAccounts()
+                    },
+                    onDismissDelete = { deleteTarget = null },
+                    onBack = { setResult(Activity.RESULT_OK); finish() },
+                )
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
         refreshAccounts()
     }
 
-    private fun buildContent(): View {
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            clipToPadding = false
-            setPadding(dp(20), dp(20), dp(20), dp(28))
-        }
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(page)
-        page.addView(label("SALLY LAUNCHER · ACCOUNTS", 12f, true, color(com.google.android.material.R.attr.colorPrimary)))
-        gap(page, 8)
-        page.addView(label("Local account", 28f, true, color(com.google.android.material.R.attr.colorOnSurface)))
-        gap(page, 8)
-        page.addView(label(
-            "Create a local offline profile using a Minecraft username. No Microsoft login or token is used. This is for single-player/local play and servers that explicitly allow offline-mode identities; online-mode servers require an official account and may reject this profile.",
-            14f, false, color(com.google.android.material.R.attr.colorOnSurfaceVariant),
-        ))
-        gap(page, 18)
-
-        val card = MaterialCardView(this).apply {
-            radius = dp(20).toFloat()
-            cardElevation = 0f
-            strokeWidth = dp(1)
-            strokeColor = color(com.google.android.material.R.attr.colorOutlineVariant)
-            setCardBackgroundColor(color(com.google.android.material.R.attr.colorSurface))
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
-        card.addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        content.addView(label("CREATE PROFILE", 11f, true, color(com.google.android.material.R.attr.colorPrimary)))
-        gap(content, 8)
-        val inputLayout = TextInputLayout(this).apply {
-            hint = "Minecraft username (3–16 chars)"
-            isHintEnabled = true
-        }
-        nameInput = TextInputEditText(inputLayout.context).apply {
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            filters = arrayOf(android.text.InputFilter.LengthFilter(16))
-        }
-        inputLayout.addView(nameInput)
-        content.addView(inputLayout)
-        gap(content, 10)
-        content.addView(MaterialButton(this).apply {
-            text = "Create and use local account"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { createAccount() }
-        })
-        gap(page, 14)
-        page.addView(card)
-        gap(page, 14)
-        statusText = label("No local account selected.", 13f, false, color(com.google.android.material.R.attr.colorOnSurfaceVariant))
-        page.addView(statusText)
-        gap(page, 10)
-        page.addView(label("SAVED LOCAL ACCOUNTS", 11f, true, color(com.google.android.material.R.attr.colorPrimary)))
-        gap(page, 8)
-        accountList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        page.addView(accountList)
-        gap(page, 16)
-        page.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Back to launcher"
-            isAllCaps = false
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            setOnClickListener { setResult(Activity.RESULT_OK); finish() }
-        })
-        return scroll
-    }
-
     private fun createAccount() {
-        val rawName = nameInput.text?.toString().orEmpty()
-        val profile = runCatching { OfflineAccountProfile.create(rawName) }.getOrElse { error ->
-            nameInput.error = error.message ?: "Enter a valid username."
+        val profile = runCatching { OfflineAccountProfile.create(username) }.getOrElse { error ->
+            inputError = error.message ?: "Enter a valid username."
             return
         }
-        nameInput.error = null
         runCatching { LocalAccountRepository.add(this, profile.username) }
             .onSuccess { account ->
-                statusText.text = "Active local account: ${account.username}. No online authentication token is used."
-                Toast.makeText(this, "Local account ${account.username} selected", Toast.LENGTH_SHORT).show()
-                nameInput.setText("")
+                username = ""
+                inputError = null
+                status = "Active local account: ${account.username}. No online authentication token is used."
                 setResult(Activity.RESULT_OK)
                 refreshAccounts()
             }
-            .onFailure { error -> Toast.makeText(this, error.message ?: "Could not save local account.", Toast.LENGTH_LONG).show() }
+            .onFailure { error -> status = error.message ?: "Could not save local account." }
+    }
+
+    private fun activateAccount(account: OfflineAccountProfile) {
+        runCatching { LocalAccountRepository.activate(this, account.username) }
+            .onSuccess {
+                status = "Using ${it.username}. This is a local/offline profile."
+                setResult(Activity.RESULT_OK)
+                refreshAccounts()
+            }
+            .onFailure { status = it.message ?: "Could not activate account." }
     }
 
     private fun refreshAccounts() {
-        if (!::accountList.isInitialized) return
-        accountList.removeAllViews()
         val active = MinecraftLaunchSessionStore.current()
-        statusText.text = when {
+        activeName = active?.username
+        activeType = active?.accountType
+        status = when {
             active?.accountType == MinecraftAccountType.LOCAL -> "Active local account: ${active.username}"
             active?.accountType == MinecraftAccountType.MICROSOFT -> "Active Microsoft account: ${active.username}"
             else -> "No account selected."
         }
-        val accounts = LocalAccountRepository.list(this)
-        if (accounts.isEmpty()) {
-            accountList.addView(label("No saved local accounts yet.", 14f, false, color(com.google.android.material.R.attr.colorOnSurfaceVariant)))
-            return
-        }
-        accounts.forEach { account ->
-            val rowCard = MaterialCardView(this).apply {
-                radius = dp(16).toFloat()
-                cardElevation = 0f
-                strokeWidth = dp(1)
-                strokeColor = color(com.google.android.material.R.attr.colorOutlineVariant)
-                setCardBackgroundColor(color(com.google.android.material.R.attr.colorSurface))
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
-            }
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(14), dp(12), dp(14), dp(12))
-            }
-            row.addView(label(account.username, 17f, true, color(com.google.android.material.R.attr.colorOnSurface)))
-            gap(row, 4)
-            row.addView(label("Offline UUID: ${account.uuid}", 11f, false, color(com.google.android.material.R.attr.colorOnSurfaceVariant)).apply { setTextIsSelectable(true) })
-            gap(row, 8)
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            actions.addView(MaterialButton(this@LocalAccountActivity).apply {
-                text = if (active?.accountType == MinecraftAccountType.LOCAL && active.username.equals(account.username, true)) "Selected" else "Use account"
-                isAllCaps = false
-                isEnabled = !(active?.accountType == MinecraftAccountType.LOCAL && active.username.equals(account.username, true))
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) }
-                setOnClickListener {
-                    runCatching { LocalAccountRepository.activate(this@LocalAccountActivity, account.username) }
-                        .onSuccess { setResult(Activity.RESULT_OK); refreshAccounts(); Toast.makeText(this@LocalAccountActivity, "Using ${it.username}", Toast.LENGTH_SHORT).show() }
-                        .onFailure { Toast.makeText(this@LocalAccountActivity, it.message ?: "Could not activate account.", Toast.LENGTH_LONG).show() }
+        accounts = LocalAccountRepository.list(this)
+    }
+}
+
+@Composable
+private fun LocalAccountsScreen(
+    accounts: List<OfflineAccountProfile>,
+    username: String,
+    status: String,
+    activeName: String?,
+    activeType: MinecraftAccountType?,
+    deleteTarget: OfflineAccountProfile?,
+    inputError: String?,
+    onUsernameChange: (String) -> Unit,
+    onCreate: () -> Unit,
+    onActivate: (OfflineAccountProfile) -> Unit,
+    onDeleteRequest: (OfflineAccountProfile) -> Unit,
+    onDeleteConfirm: (OfflineAccountProfile) -> Unit,
+    onDismissDelete: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Scaffold { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("SALLY LAUNCHER · ACCOUNT", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text("Local profiles", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
                 }
-            })
-            actions.addView(MaterialButton(this@LocalAccountActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = "Delete"
-                isAllCaps = false
-                setOnClickListener {
-                    MaterialAlertDialogBuilder(this@LocalAccountActivity)
-                        .setTitle("Delete local account?")
-                        .setMessage("Remove ${account.username} from this launcher? This does not delete any Minecraft worlds.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Delete") { _, _ ->
-                            LocalAccountRepository.remove(this@LocalAccountActivity, account.username)
-                            setResult(Activity.RESULT_OK)
-                            refreshAccounts()
+            }
+            item {
+                Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.AccountCircle, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Offline identity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Create a local profile using a Minecraft username. No Microsoft login or token is used. This is for single-player/local play and servers explicitly configured to allow offline-mode identities; online-mode servers require an official account.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+            item {
+                OutlinedCard(shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Create profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = onUsernameChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            isError = inputError != null,
+                            label = { Text("Minecraft username") },
+                            supportingText = { Text(inputError ?: "3–16 letters, numbers, or underscores") },
+                            leadingIcon = { Icon(Icons.Outlined.AccountCircle, null) },
+                        )
+                        Button(onClick = onCreate, enabled = username.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.AccountCircle, null); Spacer(Modifier.width(8.dp)); Text("Create and use profile")
                         }
-                        .show()
+                    }
                 }
-            })
-            row.addView(actions)
-            rowCard.addView(row)
-            accountList.addView(rowCard)
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Saved accounts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (accounts.isEmpty()) {
+                item {
+                    OutlinedCard(shape = RoundedCornerShape(20.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.AccountCircle, null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text("No saved local accounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Create a profile above to use an offline identity.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            items(accounts, key = { it.username.lowercase() }) { account ->
+                OutlinedCard(shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Outlined.AccountCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(account.username, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Local / offline profile", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (activeType == MinecraftAccountType.LOCAL && activeName.equals(account.username, true)) {
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        Text("UUID: ${account.uuid}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { onActivate(account) },
+                                enabled = !(activeType == MinecraftAccountType.LOCAL && activeName.equals(account.username, true)),
+                                modifier = Modifier.weight(1f),
+                            ) { Text(if (activeType == MinecraftAccountType.LOCAL && activeName.equals(account.username, true)) "Selected" else "Use account") }
+                            OutlinedButton(onClick = { onDeleteRequest(account) }) {
+                                Icon(Icons.Outlined.DeleteOutline, null); Spacer(Modifier.width(4.dp)); Text("Delete")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-
-    private fun label(text: String, size: Float, bold: Boolean, foreground: Int): TextView = TextView(this).apply {
-        this.text = text
-        textSize = size
-        setTextColor(foreground)
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-        includeFontPadding = true
+    deleteTarget?.let { account ->
+        AlertDialog(
+            onDismissRequest = onDismissDelete,
+            title = { Text("Delete local account?") },
+            text = { Text("Remove ${account.username} from this launcher? This does not delete Minecraft worlds.") },
+            confirmButton = { TextButton(onClick = { onDeleteConfirm(account) }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = onDismissDelete) { Text("Cancel") } },
+        )
     }
-
-    private fun gap(parent: LinearLayout, height: Int) { parent.addView(View(this), LinearLayout.LayoutParams(1, dp(height))) }
-    private fun color(attribute: Int): Int = android.util.TypedValue().let { value ->
-        if (theme.resolveAttribute(attribute, value, true)) value.data else android.graphics.Color.BLACK
-    }
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
