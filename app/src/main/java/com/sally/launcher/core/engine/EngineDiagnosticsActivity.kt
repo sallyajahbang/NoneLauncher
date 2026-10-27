@@ -41,6 +41,9 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var malformedInputRecords = 0
     @Volatile private var inputSinkFailures = 0
     @Volatile private var lastEventSummary = "No input received yet"
+    private val callbackDispatcher = GlfwInputEventDispatcher(
+        DiagnosticGlfwInputCallbacks { summary -> lastEventSummary = summary },
+    )
 
     private var lastUiReportAt = 0L
     private var program = 0
@@ -357,6 +360,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS,
                     event.x,
                     event.y,
+                    event.metaState,
                 )
                 return accepted
             }
@@ -397,12 +401,13 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
         positionAttribute = GLES20.glGetAttribLocation(program, "aPosition")
         colorUniform = GLES20.glGetUniformLocation(program, "uColor")
-        NativeEngineBridge.sendInput(NativeEngineBridge.EVENT_VIEWPORT, 0, 0, 0f, 0f, 0f)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-        NativeEngineBridge.sendInput(NativeEngineBridge.EVENT_VIEWPORT, width, height, 0f, 0f, 0f)
+        NativeEngineBridge.sendInput(
+            NativeEngineBridge.EVENT_VIEWPORT, 0, 0, width.toFloat(), height.toFloat(), 0f,
+        )
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -422,7 +427,11 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         // Drain on the GL/render thread so a future GLFW adapter can consume the same ordered
         // events on the engine thread. At this stage the sink only updates diagnostics.
         val pumpResult = inputPump.drain(64) { event ->
-            lastEventSummary = event.toDebugString()
+            if (!callbackDispatcher.dispatch(event)) {
+                val message = "Unknown input record: ${event.toDebugString()}"
+                lastEventSummary = message
+                throw IllegalArgumentException(message)
+            }
         }
         processedEvents += pumpResult.deliveredEventCount
         malformedInputRecords += pumpResult.malformedRecordCount
@@ -467,7 +476,7 @@ class EngineDiagnosticsActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         append(if (NativeEngineBridge.isAvailable) NativeEngineBridge.bridgeVersion() else "Native bridge failed to load")
         append("\nOpenGL ES 2.0 surface active when rendered\n")
         append("Touch the canvas, move a mouse, or press a physical key.\n")
-        append("Input is GLFW-normalized, but callbacks are not connected to Minecraft yet.")
+        append("Input is decoded into a GLFW-shaped callback contract; this screen uses a diagnostic trace only. Minecraft callbacks are not connected yet.")
     }
 
     private fun statusWithEvents(): String = initialStatus() +

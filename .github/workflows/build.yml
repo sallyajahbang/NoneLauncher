@@ -75,7 +75,7 @@ jobs:
           test -d "$ANDROID_SDK_ROOT/cmake/3.22.1"
           ./gradlew --version
 
-      - name: Run input mapping unit tests
+      - name: Run input mapping and callback bridge unit tests
         run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
 
       - name: Build APK
