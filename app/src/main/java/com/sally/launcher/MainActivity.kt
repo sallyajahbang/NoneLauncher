@@ -25,6 +25,7 @@ import com.sally.launcher.core.engine.EngineLauncher
 import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.core.engine.JliBridgeDiagnostics
+import com.sally.launcher.core.engine.JliLaunchSpecBuilder
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
@@ -405,7 +406,11 @@ class MainActivity : AppCompatActivity() {
         refreshButton.isEnabled = false
         playButton.isEnabled = false
         ioExecutor.execute {
-            val result = runCatching { LaunchProfileBuilder(applicationContext).prepare(selected) }
+            val result = runCatching {
+                val profile = LaunchProfileBuilder(applicationContext).prepare(selected)
+                val launchSpec = JliLaunchSpecBuilder(applicationContext).build(profile)
+                profile to launchSpec
+            }
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
                 prepareLaunchButton.isEnabled = true
@@ -414,10 +419,11 @@ class MainActivity : AppCompatActivity() {
                 runtimeButton.isEnabled = true
                 refreshButton.isEnabled = true
                 playButton.isEnabled = true
-                result.onSuccess { profile ->
-                    engineStatusText.text = "Profile resolved: Java ${profile.runtimeMajor}, ${profile.classpathEntries.size} classpath entries, ${profile.jvmArguments.size} JVM args, ${profile.gameArguments.size} game args. JVM/GLFW game bridge still pending."
+                result.onSuccess { (profile, launchSpec) ->
+                    engineStatusText.text = "Native launch request assembled: ${launchSpec.argv.size} argv entries, ${launchSpec.environment.size} environment values, ${launchSpec.blockers.size} engine blockers remain."
+                    val blockers = launchSpec.blockers.joinToString("\n") { "• $it" }
                     MaterialAlertDialogBuilder(this)
-                        .setTitle("Launch profile prepared")
+                        .setTitle("Native launch request prepared")
                         .setMessage(
                             "Minecraft ${profile.versionId}\n" +
                                 "Required Java: ${profile.requiredJavaMajor}\n" +
@@ -426,8 +432,12 @@ class MainActivity : AppCompatActivity() {
                                 "Classpath entries: ${profile.classpathEntries.size}\n" +
                                 "JVM arguments: ${profile.jvmArguments.size}\n" +
                                 "Game arguments: ${profile.gameArguments.size}\n" +
+                                "JLI argv entries: ${launchSpec.argv.size}\n" +
+                                "Native library directories: ${launchSpec.nativeLibraryDirectories.size}\n" +
+                                "Working directory: ${launchSpec.workingDirectory.absolutePath}\n" +
                                 "Assets index: ${profile.assetIndexId}\n\n" +
-                                "This validates and assembles launch data but does not start the game. The JVM/JNI bridge, Android native libraries, renderer and input integration are still required."
+                                "Remaining blockers:\n$blockers\n\n" +
+                                "This only prepares argv/environment for a future native JLI call. It does not invoke JLI_Launch or start Minecraft."
                         )
                         .setPositiveButton("OK", null)
                         .show()
