@@ -310,7 +310,7 @@ class LaunchProfileBuilder(context: Context) {
     }
 
     private fun expand(argument: String, placeholders: Map<String, String>): String {
-        val pattern = Regex("\\$\\{([^}]+)}")
+        val pattern = Regex("\\$\\{([^}]+)\\}")
         return pattern.replace(argument) { match -> placeholders[match.groupValues[1]] ?: match.value }
     }
 

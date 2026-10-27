@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -538,15 +539,18 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
     // The runtime libraries have been mapped; do not allow a different JRE in this
     // process even if a later filesystem check prevents the smoke test from starting.
     gJliAttemptedHome = home;
-    const int oldCwdFd = open(".", O_RDONLY | O_CLOEXEC);
-    if (oldCwdFd < 0 || chdir(work.c_str()) != 0) {
-        if (oldCwdFd >= 0) close(oldCwdFd);
-        return makeSmokeResponse(env, "ERROR", "Could not switch to the JVM test working directory.");
+    // Android app processes usually start with cwd "/", and SELinux denies open("/") for apps,
+    // so remember the old cwd as a path (getcwd) instead of an fd. Fall back to "/".
+    char oldCwdBuffer[4096];
+    const std::string oldCwd = getcwd(oldCwdBuffer, sizeof(oldCwdBuffer)) != nullptr
+        ? std::string(oldCwdBuffer) : std::string("/");
+    if (chdir(work.c_str()) != 0) {
+        return makeSmokeResponse(env, "ERROR",
+            std::string("Could not switch to the JVM test working directory: ") + work + " (" + std::strerror(errno) + ")");
     }
     const int logFd = open(logPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (logFd < 0) {
-        fchdir(oldCwdFd);
-        close(oldCwdFd);
+        (void) chdir(oldCwd.c_str());
         return makeSmokeResponse(env, "ERROR", "Could not open the JVM test log file.");
     }
     fflush(nullptr);
@@ -558,8 +562,7 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
         if (oldStdout >= 0) { dup2(oldStdout, STDOUT_FILENO); close(oldStdout); }
         if (oldStderr >= 0) { dup2(oldStderr, STDERR_FILENO); close(oldStderr); }
         close(logFd);
-        fchdir(oldCwdFd);
-        close(oldCwdFd);
+        (void) chdir(oldCwd.c_str());
         return makeSmokeResponse(env, "ERROR", "Could not redirect JVM diagnostic output.");
     }
 
@@ -584,8 +587,7 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
     close(oldStdout);
     close(oldStderr);
     close(logFd);
-    fchdir(oldCwdFd);
-    close(oldCwdFd);
+    (void) chdir(oldCwd.c_str());
 
     const std::string output = readSmallTextFile(logPath, 48 * 1024);
     std::ostringstream response;
