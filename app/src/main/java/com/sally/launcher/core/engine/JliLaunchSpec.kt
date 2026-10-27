@@ -56,7 +56,7 @@ class JliLaunchSpecBuilder(context: Context) {
         val appNativeDir = appContext.applicationInfo.nativeLibraryDir
             .takeIf { it.isNotBlank() }
             ?.let { File(it).canonicalFile }
-        val runtimeLibraryDirs = findSharedLibraryDirectories(File(runtimeHome, "lib"))
+        val runtimeLibraryDirs = RuntimeLibraryDirectories.discover(File(runtimeHome, "lib"))
         val gameNativeDirs = if (nativesDirectory.isDirectory && containsSharedLibrary(nativesDirectory)) {
             listOf(nativesDirectory)
         } else emptyList()
@@ -175,6 +175,9 @@ class JliLaunchSpecBuilder(context: Context) {
         }
 
         val (width, height) = GameDisplaySize.resolve(appContext)
+        // Upstream Pojav explicitly sets java.home; relying on launcher's inferred home
+        // is fragile when JLI is called from a library instead of an executable.
+        addDefault("-Djava.home", runtimeHome.absolutePath)
         addDefault("-Dos.name", "Linux")
         addDefault("-Dos.version", "Android-${Build.VERSION.RELEASE}")
         addDefault("-Duser.language", Locale.getDefault().language.ifBlank { "en" })
@@ -328,36 +331,7 @@ class JliLaunchSpecBuilder(context: Context) {
         arguments += classpath
     }
 
-    private fun findSharedLibraryDirectories(root: File): List<File> {
-        if (!root.isDirectory) return emptyList()
-        val rootCanonical = runCatching { root.canonicalFile }.getOrNull() ?: return emptyList()
-        val found = LinkedHashSet<File>()
-        val visited = HashSet<String>()
-        var budget = 0
-
-        fun visit(directory: File, depth: Int) {
-            if (depth > 7 || budget >= MAX_SCANNED_ENTRIES) return
-            val canonical = runCatching { directory.canonicalFile }.getOrNull() ?: return
-            val rootPath = rootCanonical.path
-            if (canonical.path != rootPath && !canonical.path.startsWith(rootPath + File.separator)) return
-            if (!visited.add(canonical.path)) return
-            budget++
-            val children = canonical.listFiles().orEmpty()
-            if (children.any { it.isFile && it.name.endsWith(".so") }) found += canonical
-            for (child in children) {
-                if (budget >= MAX_SCANNED_ENTRIES) break
-                if (child.isDirectory) visit(child, depth + 1)
-            }
-        }
-
-        visit(rootCanonical, 0)
-        return found.toList().sortedBy { it.absolutePath }
-    }
-
     private fun containsSharedLibrary(directory: File): Boolean =
         directory.isDirectory && directory.listFiles().orEmpty().any { it.isFile && it.name.endsWith(".so") }
 
-    private companion object {
-        const val MAX_SCANNED_ENTRIES = 5_000
-    }
 }

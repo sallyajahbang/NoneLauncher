@@ -339,7 +339,21 @@ void collectRuntimeLibraryDirectories(
         }
     }
     closedir(handle);
-    if (hasSharedObject) found.insert(canonical);
+    if (hasSharedObject) {
+        found.insert(canonical);
+        // Include the parent library root too. The Java 8 Android runtime stores
+        // libjli.so under lib/<arch>/jli and libjvm.so under lib/<arch>/server,
+        // while JLI's launch/re-exec logic expects lib/<arch> in LD_LIBRARY_PATH.
+        // If it is missing, JLI tries execve(runtimeHome/bin/java), which fails
+        // under Android app-private storage and reports "Permission denied".
+        const std::size_t slash = canonical.find_last_of('/');
+        if (slash != std::string::npos && slash > 0) {
+            const std::string parent = canonical.substr(0, slash);
+            if ((parent == root || pathIsInside(root, parent)) && parent != canonical) {
+                found.insert(parent);
+            }
+        }
+    }
     for (const auto& subdirectory : subdirectories) {
         if (visited > 50000) break;
         collectRuntimeLibraryDirectories(root, subdirectory, depth + 1, visited, found);
@@ -590,7 +604,7 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
     gJliVersionAttempted = true;
     const jint exitCode = launch(
         static_cast<int>(argStorage.size()), argv.data(), 0, nullptr, 0, nullptr,
-        fullVersion.c_str(), dotVersion.c_str(), "java", "SallyLauncher",
+        fullVersion.c_str(), dotVersion.c_str(), "java", "java",
         JNI_FALSE, JNI_TRUE, JNI_FALSE, 0);
 
     fflush(nullptr);

@@ -34,11 +34,13 @@ import com.sally.launcher.core.auth.LocalAccountActivity
 import com.sally.launcher.core.auth.LocalAccountRepository
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.PojavGameActivity
+import com.sally.launcher.core.engine.PojavEnginePayloadInstaller
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
 import com.sally.launcher.data.model.VersionCatalog
 import com.sally.launcher.data.version.VersionManifestRepository
+import java.io.File
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -469,6 +471,13 @@ class MainActivity : AppCompatActivity() {
         playButton.isEnabled = false
         ioExecutor.execute {
             val result = runCatching {
+                // This button may be used before any game Surface exists. Install the bundled
+                // runtime assets before inspecting them so a clean first launch does not report
+                // Caciocavallo/GLFW as missing merely because the game activity has not opened.
+                val minecraftRoot = File(applicationContext.filesDir, "minecraft")
+                val payloadInstaller = PojavEnginePayloadInstaller(applicationContext)
+                payloadInstaller.installCaciocavalloComponents(minecraftRoot)
+                payloadInstaller.installPatchedGlfwClasses(minecraftRoot)
                 val session = MinecraftLaunchSessionStore.current()
                 val profile = LaunchProfileBuilder(applicationContext).prepare(selected, session = session)
                 val launchSpec = JliLaunchSpecBuilder(applicationContext).build(profile)
