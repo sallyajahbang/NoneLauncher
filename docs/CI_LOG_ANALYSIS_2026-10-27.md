@@ -1,32 +1,38 @@
 # CI log analysis — 2026-10-27
 
-## What the uploaded ZIP contains
+## What the uploaded archives contain
 
-The uploaded archive is GitHub Actions output for **Build debug APK**, not a device `logcat` or Minecraft `latest.log`. It therefore identifies a build failure, not a runtime crash on the phone.
+Both uploaded archives are GitHub Actions logs for **Build debug APK**, not Android device `logcat` or Minecraft `latest.log`. They show build-pipeline failures, not a confirmed crash while Minecraft is running.
 
-## Confirmed failure
+## First CI log
 
-Job step: `8_Run input mapping, engine compatibility, and callback bridge unit tests.txt`
+The build reached Gradle but failed at `:app:checkDebugAarMetadata`:
 
-Failed task: `:app:checkDebugAarMetadata`
+- `com.bytedance:bytehook:1.1.2` requires `compileSdk` 37 or newer.
+- Its dependency `com.bytedance.android:shadowhook:2.0.1` also requires `compileSdk` 37 or newer.
 
-The log reports two metadata violations:
+The configured toolchain used Android API 35 / AGP 8.7.3.
 
-- `com.bytedance:bytehook:1.1.2` requires `compileSdk` 37 or newer; the app was compiled against Android 35.
-- `com.bytedance.android:shadowhook:2.0.1` requires `compileSdk` 37 or newer; the app was compiled against Android 35.
+## Second CI log
 
-The build was using AGP 8.7.3, whose log-reported recommended maximum compile SDK was 35. The Kotlin/native unit tests did not run: Gradle stopped in AAR metadata validation before compilation/tests.
+The attempted workaround moved the workflow to Android SDK platform 37 and Build Tools 36.0.0. It failed earlier, inside `android-actions/setup-android`, with:
 
-## Changes made in this package
+`Warning: Failed to find package 'platforms;android-37'`
 
-- `app/build.gradle`: `compileSdk` raised to 37 and the separate Kotlin Android plugin / old `kotlinOptions` block removed because AGP 9 supplies built-in Kotlin. ByteHook 1.1.2 remains pinned. `targetSdk` is intentionally unchanged at 35 to avoid changing runtime behavior as part of a compile toolchain repair.
-- `build.gradle`: AGP upgraded to 9.1.1.
-- `gradle/wrapper/gradle-wrapper.properties`: Gradle wrapper upgraded to 9.3.1.
-- `.github/workflows/build.yml`: CI now installs Android SDK platform 37 and Build Tools 36.0.0.
-- `README.md` and `docs/FIXES_CRASH_ANALYSIS.md`: documentation updated to reflect the CI failure and the repair.
+No Gradle task, test, CMake configure, or APK build ran in this second job. This is the direct cause of that run's failure.
 
-AGP 9.1.1 officially supports API 37 and requires Gradle 9.3.1. It provides built-in Kotlin support, so the old `org.jetbrains.kotlin.android` plugin was removed rather than applied alongside AGP's built-in implementation.
+## Correction in the current source package
 
-## What is not yet proven
+To handle both logged failures without depending on an unavailable SDK package, the project has been returned to its original known build toolchain:
 
-A new GitHub Actions run must still confirm unit tests, CMake configuration for all four ABIs, and `assembleDebug` with this updated toolchain. The uploaded logs contain no Android device crash stack, so they do not establish whether a remaining Minecraft launch crash exists. If the build passes but the game still crashes, collect `adb logcat` from just before Play is tapped until process exit and the resulting `latest.log`.
+- Android Gradle Plugin 8.7.3
+- Gradle 8.9
+- Kotlin Android plugin 2.0.21
+- `compileSdk` / SDK platform 35; Build Tools 35.0.0
+- ByteHook 1.1.1, which declares ShadowHook 1.1.1 as its dependency (Maven Central metadata: https://mvnrepository.com/artifact/com.bytedance/bytehook/1.1.1)
+
+This is intended to remove the compileSdk-37 metadata constraint and the unavailable SDK-37 setup dependency. A fresh GitHub Actions run must confirm it. I cannot claim the APK builds until that run completes.
+
+## What is not proven
+
+Neither CI archive contains a device crash stack. If CI completes but the game crashes on launch, collect `adb logcat` from before pressing Play until the process exits, plus the resulting `files/minecraft/logs/latest.log`.

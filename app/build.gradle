@@ -1,10 +1,11 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 android {
     namespace 'com.sally.launcher'
-    compileSdk 37
+    compileSdk 35
     ndkVersion '26.3.11579264'
 
     defaultConfig {
@@ -37,6 +38,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
     externalNativeBuild {
         cmake {
             path file('src/main/cpp/CMakeLists.txt')
@@ -63,9 +68,9 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'org.apache.commons:commons-compress:1.28.0'
     implementation 'org.tukaani:xz:1.10'
-    // Keep the current Android 17-compatible native exit-hook implementation.
-    // AGP 9.1.1 / compileSdk 37 are required by ByteHook 1.1.2 and ShadowHook 2.0.1 metadata.
-    implementation 'com.bytedance:bytehook:1.1.2'
+    // Use the ByteHook 1.1.1 release, which resolves ShadowHook 1.1.1 transitively
+    // and remains compatible with the stable Android API 35 toolchain.
+    implementation 'com.bytedance:bytehook:1.1.1'
 
     testImplementation 'junit:junit:4.13.2'
     // Use the real JSON implementation in local JVM tests instead of Android's stub android.jar classes.

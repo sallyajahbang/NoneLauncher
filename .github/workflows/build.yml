@@ -36,7 +36,7 @@ jobs:
         with:
           # Explicit package IDs avoid the retired legacy `tools` package that made
           # setup-android@v3 fail before Gradle could start.
-          packages: 'platform-tools platforms;android-37 build-tools;36.0.0 ndk;26.3.11579264 cmake;3.22.1'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;26.3.11579264 cmake;3.22.1'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -48,8 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d "$ANDROID_SDK_ROOT/platforms/android-37"
-          test -d "$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
+          test -d "$ANDROID_SDK_ROOT/build-tools/35.0.0"
           test -d "$ANDROID_SDK_ROOT/ndk/26.3.11579264"
           test -d "$ANDROID_SDK_ROOT/cmake/3.22.1"
           ./gradlew --version
