@@ -109,7 +109,7 @@ object EngineCompatibilityInspector {
             checks += EngineRequirement(
                 id = "runtime-java-awt-version",
                 ready = false,
-                detail = "This engine bundles Caciocavallo AWT support for Java 8 and 17 only; Java $javaMajor cannot be launched safely yet.",
+                detail = "This engine supports Java 8 and 17 only because its bundled Caciocavallo AWT toolkits do not match Java $javaMajor; this runtime cannot be launched safely yet.",
             )
         } else {
             checks += EngineRequirement(
@@ -129,7 +129,7 @@ object EngineCompatibilityInspector {
             detail = if (patchedGlfwValid) {
                 "Patched Android GLFW classes passed SHA-256 validation."
             } else {
-                "Pojav-compatible GLFW classes are missing or corrupted at ${patchedGlfwJar.absolutePath}; reinstall the engine payload."
+                "Required patched GLFW classes (Pojav-compatible) are missing or corrupted at ${patchedGlfwJar.absolutePath}; reinstall the engine payload."
             },
         )
         return Report(checks)
