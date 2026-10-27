@@ -36,6 +36,7 @@ import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.PojavGameActivity
 import com.sally.launcher.core.engine.PojavEnginePayloadInstaller
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.storage.LauncherStorage
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
 import com.sally.launcher.data.model.VersionCatalog
@@ -474,7 +475,7 @@ class MainActivity : AppCompatActivity() {
                 // This button may be used before any game Surface exists. Install the bundled
                 // runtime assets before inspecting them so a clean first launch does not report
                 // Caciocavallo/GLFW as missing merely because the game activity has not opened.
-                val minecraftRoot = File(applicationContext.filesDir, "minecraft")
+                val minecraftRoot = LauncherStorage.minecraftRoot(applicationContext)
                 val payloadInstaller = PojavEnginePayloadInstaller(applicationContext)
                 payloadInstaller.installCaciocavalloComponents(minecraftRoot)
                 payloadInstaller.installPatchedGlfwClasses(minecraftRoot)
@@ -631,7 +632,7 @@ class MainActivity : AppCompatActivity() {
             engineStatusText.text = "JVM test process did not return a result. It may have crashed during JVM initialization."
             // Show whatever the JVM managed to print (and a fresh hs_err crash report) in the dialog.
             val diagnostics = runCatching {
-                val log = java.io.File(filesDir, "diagnostics/jli-version.log")
+                val log = java.io.File(LauncherStorage.diagnosticsRoot(applicationContext), "jli-version.log")
                 val logText = if (log.isFile) log.readText().takeLast(2500) else ""
                 val crashReport = java.io.File(cacheDir, "jli-version-work")
                     .listFiles { file -> file.name.startsWith("hs_err") }

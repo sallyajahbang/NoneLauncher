@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Process
 import com.sally.launcher.data.runtime.RuntimeManager
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -25,7 +26,7 @@ class JliRuntimeSmokeService : Service() {
                 val runtime = RuntimeManager(applicationContext).installedRuntimes()
                     .maxByOrNull { it.majorVersion }
                     ?: throw IllegalStateException("No verified Java runtime is installed. Install a runtime first.")
-                val diagnosticsDirectory = File(filesDir, "diagnostics")
+                val diagnosticsDirectory = LauncherStorage.diagnosticsRoot(applicationContext)
                 val workDirectory = File(cacheDir, "jli-version-work")
                 val logFile = File(diagnosticsDirectory, "jli-version.log")
                 val test = JliRuntimeSmokeTest.run(runtime.home, workDirectory, logFile)
@@ -42,7 +43,7 @@ class JliRuntimeSmokeService : Service() {
                     runtime = "Unavailable",
                     runtimeHome = "",
                     details = error.message ?: error.javaClass.simpleName,
-                    logPath = File(filesDir, "diagnostics/jli-version.log").absolutePath,
+                    logPath = File(LauncherStorage.diagnosticsRoot(applicationContext), "jli-version.log").absolutePath,
                 )
             }
 

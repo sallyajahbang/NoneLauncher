@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -23,7 +24,7 @@ import java.util.concurrent.Executors
  * Native classifiers are intentionally not selected: desktop natives are not Android-ready.
  */
 class VersionInstaller(context: Context) {
-    private val root = File(context.applicationContext.filesDir, "minecraft")
+    private val root = LauncherStorage.minecraftRoot(context)
     private val versionsDir = File(root, "versions")
     private val librariesDir = File(root, "libraries")
     private val assetsDir = File(root, "assets")

@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.StatFs
 import android.system.Os
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.storage.LauncherStorage
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
@@ -26,8 +27,8 @@ import java.util.Locale
  */
 class RuntimeManager(context: Context) {
     private val appContext = context.applicationContext
-    private val minecraftRoot = File(appContext.filesDir, "minecraft")
-    private val runtimesRoot = File(minecraftRoot, "runtimes")
+    private val minecraftRoot = LauncherStorage.minecraftRoot(appContext)
+    private val runtimesRoot = LauncherStorage.runtimesRoot(appContext)
 
     data class RuntimeInfo(
         val majorVersion: Int,

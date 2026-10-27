@@ -2,6 +2,7 @@ package com.sally.launcher.core.engine
 
 import android.content.Context
 import org.lwjgl.glfw.CallbackBridge
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.File
 
 /** Loads the Android VM half of the Pojav bridge and installs matching patched GLFW classes. */
@@ -13,7 +14,7 @@ object PojavEngineBootstrap {
     )
 
     @Synchronized
-    fun prepare(context: Context, minecraftRoot: File = File(context.filesDir, "minecraft")): Result {
+    fun prepare(context: Context, minecraftRoot: File = LauncherStorage.minecraftRoot(context)): Result {
         val appContext = context.applicationContext
         val installer = PojavEnginePayloadInstaller(appContext)
         return try {

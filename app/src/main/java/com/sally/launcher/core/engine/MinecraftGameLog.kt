@@ -3,6 +3,7 @@ package com.sally.launcher.core.engine
 import android.content.Context
 import java.io.File
 import java.io.IOException
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import net.kdt.pojavlaunch.Logger
@@ -16,7 +17,7 @@ object MinecraftGameLog {
     @Volatile
     private var captureStarted = false
 
-    fun file(context: Context): File = File(File(context.applicationContext.filesDir, "minecraft/$LOG_DIRECTORY"), LOG_NAME)
+    fun file(context: Context): File = File(File(LauncherStorage.minecraftRoot(context), LOG_DIRECTORY), LOG_NAME)
 
     /**
      * Starts native output capture once per Android process. The embedded JLI/native logger is

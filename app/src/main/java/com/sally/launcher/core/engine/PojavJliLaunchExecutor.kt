@@ -5,6 +5,7 @@ import android.os.Looper
 import android.system.Os
 import com.oracle.dalvik.VMLauncher
 import net.kdt.pojavlaunch.utils.JREUtils
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.File
 import java.io.IOException
 import java.util.LinkedHashSet
@@ -50,7 +51,7 @@ class PojavJliLaunchExecutor(context: Context) {
             throw IOException("The launch specification points to a different Java runtime than the profile.")
         }
 
-        val minecraftRoot = File(appContext.filesDir, "minecraft").canonicalFile
+        val minecraftRoot = LauncherStorage.minecraftRoot(appContext).canonicalFile
         val payload = PojavEnginePayloadInstaller(appContext).inspect(minecraftRoot)
         if (!payload.ready) {
             throw IOException(

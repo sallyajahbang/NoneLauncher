@@ -2,6 +2,7 @@ package com.sally.launcher.core.engine
 
 import android.app.ActivityManager
 import android.content.Context
+import com.sally.launcher.data.storage.LauncherStorage
 import android.os.Build
 import java.io.File
 import java.io.IOException
@@ -86,7 +87,7 @@ class JliLaunchSpecBuilder(context: Context) {
             vmArguments += "-Djava.io.tmpdir=${tempDirectory.absolutePath}"
         }
         if (vmArguments.none { it.startsWith("-Duser.home=") }) {
-            vmArguments += "-Duser.home=${appContext.filesDir.canonicalPath}"
+            vmArguments += "-Duser.home=${LauncherStorage.accessibleFilesDir(appContext).canonicalPath}"
         }
         addPojavRuntimeArguments(vmArguments, appNativeDir, runtimeHome, minecraftRoot)
         ensureClasspath(vmArguments, profile.classpath)
@@ -104,7 +105,7 @@ class JliLaunchSpecBuilder(context: Context) {
         val (displayWidth, displayHeight) = GameDisplaySize.resolve(appContext)
         val env = linkedMapOf(
             "JAVA_HOME" to runtimeHome.absolutePath,
-            "HOME" to appContext.filesDir.canonicalPath,
+            "HOME" to LauncherStorage.accessibleFilesDir(appContext).canonicalPath,
             "TMPDIR" to tempDirectory.absolutePath,
             "TMP" to tempDirectory.absolutePath,
             "PATH" to (File(runtimeHome, "bin").absolutePath + File.pathSeparator + System.getenv("PATH").orEmpty()),

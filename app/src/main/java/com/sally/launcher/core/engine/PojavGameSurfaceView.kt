@@ -10,6 +10,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import org.lwjgl.glfw.CallbackBridge
 import net.kdt.pojavlaunch.utils.JREUtils
+import com.sally.launcher.data.storage.LauncherStorage
 import java.io.File
 
 /**
@@ -18,7 +19,7 @@ import java.io.File
  */
 class PojavGameSurfaceView(
     context: Context,
-    private val minecraftRoot: File = File(context.filesDir, "minecraft"),
+    private val minecraftRoot: File = LauncherStorage.minecraftRoot(context),
     private val status: (String) -> Unit = {},
 ) : SurfaceView(context), SurfaceHolder.Callback {
     private var nativeLibraryLoaded = false

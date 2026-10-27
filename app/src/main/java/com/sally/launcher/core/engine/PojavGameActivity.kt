@@ -16,9 +16,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.storage.LauncherStorage
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
 import java.io.IOException
@@ -43,16 +46,20 @@ class PojavGameActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            )
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+        // Apply after setContentView as well: Android can reset system-bar visibility
+        // when an Activity is resumed or its window regains focus.
+        applyImmersiveFullscreen()
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            val fullscreenLost = visibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0
+            val navigationShown = visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0
+            if (fullscreenLost || navigationShown) {
+                window.decorView.post { applyImmersiveFullscreen() }
+            }
+        }
 
         requestedVersion = readVersionFromIntent()
         if (requestedVersion == null) {
@@ -80,7 +87,7 @@ class PojavGameActivity : AppCompatActivity() {
         // On-screen controls + touch gestures (Pojav-style): shown once the JVM is starting.
         touchOverlay = GameTouchOverlay(this).apply {
             visibility = View.GONE
-            optionsFile = File(File(filesDir, "minecraft"), "game/options.txt")
+            optionsFile = File(File(LauncherStorage.minecraftRoot(this), "game"), "options.txt")
         }
         root.addView(touchOverlay, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -138,12 +145,51 @@ class PojavGameActivity : AppCompatActivity() {
         ))
         gamePanel = panel
         setContentView(root)
+        applyImmersiveFullscreen()
+        root.post { applyImmersiveFullscreen() }
         surfaceView.requestFocus()
     }
 
     override fun onResume() {
         super.onResume()
+        applyImmersiveFullscreen()
+        // Re-apply once the decor has completed the resume/layout pass. This fixes
+        // status/navigation bars returning after Home, app switching, or screen unlock.
+        window.decorView.post { applyImmersiveFullscreen() }
         if (::surfaceView.isInitialized && surfaceView.isBridgeReady) beginLaunchWhenReady()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyImmersiveFullscreen()
+            window.decorView.post { applyImmersiveFullscreen() }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyImmersiveFullscreen() {
+        if (isFinishing || isDestroyed) return
+        val decor = window.decorView
+
+        // Legacy flags keep Android 7+ devices and native GLFW integrations working.
+        decor.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+
+        // Modern insets API is also needed on Android 11+ where system bars can be
+        // restored after returning from another app or a transient system gesture.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, decor).apply {
+            systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     override fun onBackPressed() {

@@ -2,6 +2,7 @@ package com.sally.launcher.core.engine
 
 import android.content.Context
 import com.sally.launcher.data.model.MinecraftVersion
+import com.sally.launcher.data.storage.LauncherStorage
 import com.sally.launcher.data.runtime.RuntimeManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,7 +20,7 @@ import java.util.UUID
  */
 class LaunchProfileBuilder(context: Context) {
     private val appContext = context.applicationContext
-    private val minecraftRoot = File(appContext.filesDir, "minecraft")
+    private val minecraftRoot = LauncherStorage.minecraftRoot(appContext)
     private val versionsRoot = File(minecraftRoot, "versions")
     private val librariesRoot = File(minecraftRoot, "libraries")
     private val assetsRoot = File(minecraftRoot, "assets")
