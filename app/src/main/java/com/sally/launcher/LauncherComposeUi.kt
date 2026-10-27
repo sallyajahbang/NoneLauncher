@@ -98,12 +98,17 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
     SallyLauncherTheme(
         settings = ThemeSettings(mode = state.themeMode, amoled = state.amoledBlack, dynamicColor = state.dynamicColor),
     ) {
+      Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+      ) {
         var accountOpen by remember { mutableStateOf(false) }
         val openAccount: () -> Unit = { accountOpen = true }
 
         if (isWideScreen()) {
             // design.md §5.1: landscape / expanded → NavigationRail on the left.
-            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.displayCutout)) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     Spacer(Modifier.height(12.dp))
                     LauncherTab.entries.forEach { tab ->
@@ -165,6 +170,7 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+      }
     }
 }
 
@@ -275,7 +281,7 @@ private fun HeroCard(active: MinecraftVersion?, modifier: Modifier) {
 @Composable
 private fun HomeInfoCards(state: LauncherUiState, actions: LauncherActions, active: MinecraftVersion?, javaReady: Boolean) {
     val busy = state.busyAction != null
-    OutlinedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+    SimpleCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Outlined.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f)) {
@@ -285,7 +291,7 @@ private fun HomeInfoCards(state: LauncherUiState, actions: LauncherActions, acti
             TextButton(onClick = { actions.navigate(LauncherTab.VERSIONS) }) { Text(if (active == null) "Pilih" else "Ganti") }
         }
     }
-    OutlinedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+    SimpleCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Outlined.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f)) {
@@ -534,7 +540,7 @@ private fun VersionListItem(
 
 @Composable
 private fun VersionDetailCard(version: MinecraftVersion?, state: LauncherUiState, actions: LauncherActions, modifier: Modifier) {
-    OutlinedCard(modifier = modifier, shape = RoundedCornerShape(24.dp)) {
+    SimpleCard(modifier = modifier, shape = RoundedCornerShape(24.dp)) {
         if (version == null) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                 Text("Pilih versi di daftar untuk melihat detail.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -582,7 +588,7 @@ private fun JavaScreen(state: LauncherUiState, actions: LauncherActions, onOpenA
         item { ScreenHeader("Java", "Runtime yang dipakai untuk menjalankan Minecraft.", onOpenAccount) }
         item {
             SectionTitle("Terpasang", "Runtime yang sudah diverifikasi di perangkat ini.")
-            OutlinedCard(shape = RoundedCornerShape(20.dp)) {
+            SimpleCard(shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (state.installedJavaMajors.isEmpty()) {
                         Text("Belum ada Java terpasang.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -611,7 +617,7 @@ private fun JavaScreen(state: LauncherUiState, actions: LauncherActions, onOpenA
         }
         item {
             SectionTitle("Pemetaan versi game", "Java yang disarankan berdasarkan versi Minecraft.")
-            OutlinedCard(shape = RoundedCornerShape(20.dp)) {
+            SimpleCard(shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     JavaMappingRow("1.16.5 ke bawah", "Java 8", supported = true)
                     JavaMappingRow("1.17 – 1.20.4", "Java 17", supported = true)
@@ -799,8 +805,8 @@ private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions, onO
 @Composable
 private fun SettingsSection(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle(title, subtitle)
-        OutlinedCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp))
+        SimpleCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
             Column(content = content)
         }
     }
@@ -924,6 +930,18 @@ private fun SectionTitle(title: String, subtitle: String) {
     }
 }
 
+/** Flat tonal surface, no border: keeps the UI minimal and readable in both themes. */
+@Composable
+private fun SimpleCard(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(20.dp),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(modifier = modifier, shape = shape, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(content = content)
+    }
+}
+
 @Composable
 private fun StatusPill(text: String, positive: Boolean) {
     Surface(shape = CircleShape, color = if (positive) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest) {
@@ -939,7 +957,7 @@ private fun StatusPill(text: String, positive: Boolean) {
 
 @Composable
 private fun EmptyState(icon: ImageVector, title: String, body: String, buttonText: String, onClick: () -> Unit) {
-    OutlinedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+    SimpleCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

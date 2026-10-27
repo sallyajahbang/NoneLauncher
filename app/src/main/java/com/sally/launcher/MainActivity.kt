@@ -81,6 +81,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         hideSystemBars()
         repository = VersionManifestRepository(applicationContext)
         LocalAccountRepository.restoreSelectedSession(this)
@@ -106,6 +109,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        hideSystemBars()
         LocalAccountRepository.restoreSelectedSession(this)
         updateAccountStatus()
         refreshInstalledVersionsAsync()
