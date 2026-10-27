@@ -13,8 +13,9 @@ import java.util.UUID
 
 /**
  * Resolves the launch data from Mojang's version JSON without starting a JVM.
- * The result is deliberately a profile, not an executable launch: Sally still needs its
- * Android JNI/JVM bridge, Android-native libraries, renderer and input callbacks.
+ * The result is a validated launch profile. The Pojav JLI executor is a separate layer and
+ * refuses to execute until the authenticated session, runtime payload, surface and native bridge
+ * are all ready.
  */
 class LaunchProfileBuilder(context: Context) {
     private val appContext = context.applicationContext
@@ -36,12 +37,21 @@ class LaunchProfileBuilder(context: Context) {
         val gameArguments: List<String>,
         val workingDirectory: File,
         val assetIndexId: String,
+        val isAuthenticatedSession: Boolean = false,
+        val sessionUsername: String? = null,
+        val sessionUuid: String? = null,
     ) {
         val classpath: String get() = classpathEntries.joinToString(File.pathSeparator) { it.absolutePath }
     }
 
-    fun prepare(version: MinecraftVersion, playerName: String = DEFAULT_PLAYER_NAME): LaunchProfile {
-        validatePlayerName(playerName)
+    fun prepare(
+        version: MinecraftVersion,
+        playerName: String = DEFAULT_PLAYER_NAME,
+        session: MinecraftLaunchSession? = null,
+    ): LaunchProfile {
+        session?.validationError()?.let { throw IOException(it) }
+        val resolvedPlayerName = session?.username ?: playerName
+        validatePlayerName(resolvedPlayerName)
         val id = safeId(version.id)
         val versionDirectory = File(versionsRoot, id)
         val metadataFile = File(versionDirectory, "$id.json")
@@ -116,20 +126,21 @@ class LaunchProfileBuilder(context: Context) {
             if (!isDirectory) throw IOException("Minecraft game path is not a directory")
         }
 
-        val uuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(StandardCharsets.UTF_8)).toString().replace("-", "")
+        val uuid = session?.normalizedUuid
+            ?: UUID.nameUUIDFromBytes("OfflinePlayer:$resolvedPlayerName".toByteArray(StandardCharsets.UTF_8)).toString().replace("-", "")
         val nativesDirectory = File(minecraftRoot, "natives")
         val placeholders = mapOf(
-            "auth_player_name" to playerName,
+            "auth_player_name" to resolvedPlayerName,
             "version_name" to version.id,
             "game_directory" to workingDirectory.absolutePath,
             "assets_root" to assetsRoot.absolutePath,
             "assets_index_name" to assetIndexId,
             "auth_uuid" to uuid,
-            "auth_access_token" to "0",
-            "user_type" to "legacy",
-            "user_properties" to "{}",
-            "clientid" to "0",
-            "auth_xuid" to "0",
+            "auth_access_token" to (session?.accessToken ?: "0"),
+            "user_type" to (session?.userType ?: "legacy"),
+            "user_properties" to (session?.userPropertiesJson ?: "{}"),
+            "clientid" to (session?.clientId?.ifBlank { "0" } ?: "0"),
+            "auth_xuid" to (session?.xuid?.ifBlank { "0" } ?: "0"),
             "version_type" to (metadata.optString("type").ifBlank { version.type }),
             "launcher_name" to "SallyLauncher",
             "launcher_version" to "0.5.0",
@@ -182,6 +193,9 @@ class LaunchProfileBuilder(context: Context) {
             gameArguments = gameArguments,
             workingDirectory = workingDirectory,
             assetIndexId = assetIndexId,
+            isAuthenticatedSession = session != null && session.validationError() == null,
+            sessionUsername = session?.username,
+            sessionUuid = session?.normalizedUuid,
         )
     }
 

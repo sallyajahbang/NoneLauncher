@@ -6,7 +6,7 @@ import java.io.IOException
 import java.util.LinkedHashSet
 
 /**
- * Immutable, shell-free description of a future JLI_Launch invocation.
+ * Immutable, shell-free description of a JLI_Launch invocation.
  * Building this object never loads native libraries, mutates process environment, or starts a JVM.
  */
 data class JliLaunchSpec(
@@ -20,7 +20,7 @@ data class JliLaunchSpec(
     val canAttemptLaunch: Boolean get() = blockers.isEmpty()
 }
 
-/** Builds the exact argv/environment payload that the native JLI bridge will consume later. */
+/** Builds the exact argv/environment payload consumed by the Pojav-derived native JLI bridge. */
 class JliLaunchSpecBuilder(context: Context) {
     private val appContext = context.applicationContext
 
@@ -133,9 +133,9 @@ class JliLaunchSpecBuilder(context: Context) {
             appNativeLibraryDir = appNativeDir,
         )
         val blockers = compatibility.blockers.toMutableList()
-        blockers += "The GL surface lifecycle and native GLFW event callbacks are not yet connected to a live Minecraft render loop."
-        blockers += "A Microsoft-authenticated game session is not yet connected to the launch profile."
-        blockers += "This stage builds and validates a JLI request only; it does not invoke JLI_Launch or start Minecraft."
+        if (!profile.isAuthenticatedSession) {
+            blockers += "Sign in with a Microsoft account linked to Minecraft Java Edition before launching. Offline placeholder tokens are not accepted."
+        }
 
         return JliLaunchSpec(
             runtimeHome = runtimeHome,

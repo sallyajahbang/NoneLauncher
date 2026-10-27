@@ -28,6 +28,15 @@ class PojavGameSurfaceView(
     private var surfaceWidth = 0
     private var surfaceHeight = 0
 
+    /** True only after the JNI bridge is loaded and this view's Surface has been bound. */
+    @Volatile
+    var isBridgeReady: Boolean = false
+        private set
+
+    /** Called on the view thread after binding succeeds. Callers must dispatch JLI off the UI thread. */
+    @Volatile
+    var onBridgeReady: (() -> Unit)? = null
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
@@ -64,13 +73,16 @@ class PojavGameSurfaceView(
         runCatching {
             JREUtils.setupBridgeWindow(holder.surface)
             surfaceBound = true
+            isBridgeReady = true
             requestFocus()
             if (surfaceWidth > 0 && surfaceHeight > 0) {
                 CallbackBridge.sendScreenSize(surfaceWidth, surfaceHeight)
             }
-            status("Pojav JNI bridge loaded and Android surface bound. This diagnostic does not start Minecraft.")
+            status("Pojav JNI bridge loaded and Android surface bound.")
+            onBridgeReady?.invoke()
         }.onFailure {
             surfaceBound = false
+            isBridgeReady = false
             status("Could not bind Android surface to Pojav: ${it.message ?: it.javaClass.simpleName}")
         }
     }
@@ -86,6 +98,7 @@ class PojavGameSurfaceView(
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         CallbackBridge.setGrabStateListener(null)
         if (surfaceBound) runCatching { JREUtils.releaseBridgeWindow() }
+        isBridgeReady = false
         surfaceBound = false
         nativeLibraryLoaded = false
     }

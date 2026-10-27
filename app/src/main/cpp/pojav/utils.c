@@ -83,25 +83,42 @@ JNIEXPORT jint JNICALL Java_android_os_OpenJDKNativeRegister_nativeRegisterNativ
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setLdLibraryPath(JNIEnv *env, jclass clazz, jstring ldLibraryPath) {
-	// jclass exception_cls = (*env)->FindClass(env, "java/lang/UnsatisfiedLinkError");
-	
-	android_update_LD_LIBRARY_PATH_t android_update_LD_LIBRARY_PATH;
-	
-	void *libdl_handle = dlopen("libdl.so", RTLD_LAZY);
+	if (ldLibraryPath == NULL) {
+		jclass exception_cls = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+		if (exception_cls != NULL) (*env)->ThrowNew(env, exception_cls, "LD_LIBRARY_PATH must not be null");
+		return;
+	}
+
+	void *libdl_handle = dlopen("libdl.so", RTLD_NOW | RTLD_LOCAL);
+	if (libdl_handle == NULL) {
+		LOGE("Could not open libdl.so while updating the runtime linker path: %s", dlerror());
+		jclass exception_cls = (*env)->FindClass(env, "java/lang/UnsatisfiedLinkError");
+		if (exception_cls != NULL) (*env)->ThrowNew(env, exception_cls, "Android linker path update is unavailable on this device");
+		return;
+	}
+
 	void *updateLdLibPath = dlsym(libdl_handle, "android_update_LD_LIBRARY_PATH");
 	if (updateLdLibPath == NULL) {
 		updateLdLibPath = dlsym(libdl_handle, "__loader_android_update_LD_LIBRARY_PATH");
-		if (updateLdLibPath == NULL) {
-			char *dl_error_c = dlerror();
-			LOGE("Error getting symbol android_update_LD_LIBRARY_PATH: %s", dl_error_c);
-			// (*env)->ThrowNew(env, exception_cls, dl_error_c);
-		}
 	}
-	
-	android_update_LD_LIBRARY_PATH = (android_update_LD_LIBRARY_PATH_t) updateLdLibPath;
+	if (updateLdLibPath == NULL) {
+		const char *dl_error_c = dlerror();
+		LOGE("Android linker path update symbol is unavailable: %s", dl_error_c != NULL ? dl_error_c : "unknown error");
+		dlclose(libdl_handle);
+		jclass exception_cls = (*env)->FindClass(env, "java/lang/UnsatisfiedLinkError");
+		if (exception_cls != NULL) (*env)->ThrowNew(env, exception_cls, "Android linker path update is unavailable on this device");
+		return;
+	}
+
+	android_update_LD_LIBRARY_PATH_t android_update_LD_LIBRARY_PATH = (android_update_LD_LIBRARY_PATH_t) updateLdLibPath;
 	const char* ldLibPathUtf = (*env)->GetStringUTFChars(env, ldLibraryPath, 0);
-	android_update_LD_LIBRARY_PATH(ldLibPathUtf);
+	if (ldLibPathUtf == NULL) {
+		dlclose(libdl_handle);
+		return; /* The JVM has already raised an exception. */
+	}
+	android_update_LD_LIBRARY_PATH((char*) ldLibPathUtf);
 	(*env)->ReleaseStringUTFChars(env, ldLibraryPath, ldLibPathUtf);
+	dlclose(libdl_handle);
 }
 
 JNIEXPORT jboolean JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_dlopen(JNIEnv *env, jclass clazz, jstring name) {

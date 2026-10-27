@@ -24,13 +24,12 @@ import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
-import com.sally.launcher.core.engine.EngineLaunchResult
-import com.sally.launcher.core.engine.EngineLauncher
-import com.sally.launcher.core.engine.EngineLauncherNotIntegrated
 import com.sally.launcher.core.engine.LaunchProfileBuilder
 import com.sally.launcher.core.engine.JliBridgeDiagnostics
 import com.sally.launcher.core.engine.JliRuntimeSmokeService
 import com.sally.launcher.core.engine.JliLaunchSpecBuilder
+import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
+import com.sally.launcher.core.engine.PojavGameActivity
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.runtime.RuntimeManager
@@ -41,8 +40,6 @@ import java.util.concurrent.Executors
 class MainActivity : AppCompatActivity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val engineLauncher: EngineLauncher = EngineLauncherNotIntegrated()
-
     private lateinit var repository: VersionManifestRepository
     private lateinit var versionInput: MaterialAutoCompleteTextView
     private lateinit var statusText: TextView
@@ -168,10 +165,10 @@ class MainActivity : AppCompatActivity() {
         val engineContent = cardContent(engineCard)
         engineContent.addView(sectionLabel("ENGINE STATUS"))
         addGap(engineContent, 8)
-        engineContent.addView(textView("JVM startup diagnostics · game bridge pending", 19f, bold = true))
+        engineContent.addView(textView("NATIVE ENGINE · Pojav / JLI", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "The Pojav-derived Android GLFW/LWJGL bridge payload is now bundled. You can probe the native surface/input bridge below; a complete renderer, authenticated session, and Minecraft JVM launch are still pending.",
+            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Launch is permitted only after the game surface is bound and a valid Microsoft/Minecraft Java session is supplied; authentication is not yet wired to this screen.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
@@ -435,7 +432,8 @@ class MainActivity : AppCompatActivity() {
         playButton.isEnabled = false
         ioExecutor.execute {
             val result = runCatching {
-                val profile = LaunchProfileBuilder(applicationContext).prepare(selected)
+                val session = MinecraftLaunchSessionStore.current()
+                val profile = LaunchProfileBuilder(applicationContext).prepare(selected, session = session)
                 val launchSpec = JliLaunchSpecBuilder(applicationContext).build(profile)
                 profile to launchSpec
             }
@@ -463,9 +461,10 @@ class MainActivity : AppCompatActivity() {
                                 "JLI argv entries: ${launchSpec.argv.size}\n" +
                                 "Native library directories: ${launchSpec.nativeLibraryDirectories.size}\n" +
                                 "Working directory: ${launchSpec.workingDirectory.absolutePath}\n" +
-                                "Assets index: ${profile.assetIndexId}\n\n" +
+                                "Assets index: ${profile.assetIndexId}\n" +
+                                "Authenticated session: ${profile.isAuthenticatedSession}\n\n" +
                                 "Remaining blockers:\n$blockers\n\n" +
-                                "This only prepares argv/environment for a future native JLI call. It does not invoke JLI_Launch or start Minecraft."
+                                "Session tokens are never displayed in diagnostics. The game activity invokes native JLI only when all checks pass and the Pojav surface is bound."
                         )
                         .setPositiveButton("OK", null)
                         .show()
@@ -499,7 +498,7 @@ class MainActivity : AppCompatActivity() {
                 jvmBridgeButton.text = "Probe installed JVM bridge"
                 result.onSuccess { (runtime, probe) ->
                     engineStatusText.text = if (probe.available) {
-                        "JLI loader probe passed for ${runtime.displayName()}. Minecraft launch is still disabled until Android LWJGL/GLFW and renderer integration is complete."
+                        "JLI loader probe passed for ${runtime.displayName()}. This verifies library availability only; actual launch still requires an authenticated Java profile, a bound surface, and device-tested renderer compatibility."
                     } else {
                         "JLI loader probe failed for ${runtime.displayName()}. See diagnostic details."
                     }
@@ -544,7 +543,7 @@ class MainActivity : AppCompatActivity() {
                 val details = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_DETAILS).orEmpty()
                 val logPath = intent.getStringExtra(JliRuntimeSmokeService.EXTRA_LOG_PATH).orEmpty()
                 engineStatusText.text = if (passed) {
-                    "JVM startup test passed for $runtime. Minecraft launch remains blocked until Android LWJGL/GLFW, natives, renderer, and input integration are complete."
+                    "JVM startup test passed for $runtime. This does not prove Minecraft will render; actual launch also requires an authenticated Java account and a successful device-side game-surface test."
                 } else {
                     "JVM startup test failed or is unavailable for $runtime. See the diagnostic log for details."
                 }
@@ -619,23 +618,44 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onPlayPressed() {
-        if (selectedVersionId.isBlank()) {
+        if (!::versions.isInitialized || selectedVersionId.isBlank()) {
             Toast.makeText(this, "Load and select a Minecraft version first.", Toast.LENGTH_SHORT).show()
             return
         }
-        when (val result = engineLauncher.launch(selectedVersionId)) {
-            is EngineLaunchResult.Started -> Toast.makeText(this, "Starting ${result.versionId}", Toast.LENGTH_SHORT).show()
-            is EngineLaunchResult.NotReady -> MaterialAlertDialogBuilder(this)
-                .setTitle("Game engine not ready")
-                .setMessage(result.explanation)
-                .setPositiveButton("OK", null)
-                .show()
-            is EngineLaunchResult.Failed -> MaterialAlertDialogBuilder(this)
-                .setTitle("Could not launch")
-                .setMessage(result.explanation)
-                .setPositiveButton("OK", null)
-                .show()
+        val selected = versions.firstOrNull { it.id == selectedVersionId }
+        if (selected == null) {
+            Toast.makeText(this, "The selected Minecraft version is no longer in the loaded catalog.", Toast.LENGTH_LONG).show()
+            return
         }
+        val session = MinecraftLaunchSessionStore.current()
+        if (session == null) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Minecraft account required")
+                .setMessage(
+                    "The native JLI launch path is now implemented, but Sally does not yet have a Microsoft sign-in flow connected. " +
+                        "Launch is intentionally blocked until the Microsoft → Xbox Live → XSTS → Minecraft account chain returns a real Java profile and access token. " +
+                        "The launcher will not use an offline placeholder token as a substitute."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val sessionError = session.validationError()
+        if (sessionError != null) {
+            MinecraftLaunchSessionStore.clear()
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Minecraft account session expired or invalid")
+                .setMessage(sessionError)
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        startActivity(Intent(this, PojavGameActivity::class.java).apply {
+            putExtra(PojavGameActivity.EXTRA_VERSION_ID, selected.id)
+            putExtra(PojavGameActivity.EXTRA_VERSION_TYPE, selected.type)
+            putExtra(PojavGameActivity.EXTRA_VERSION_URL, selected.url)
+            putExtra(PojavGameActivity.EXTRA_RELEASE_TIME, selected.releaseTime)
+        })
     }
 
     private fun card(): MaterialCardView = MaterialCardView(this).apply {

@@ -19,7 +19,7 @@ The app-side callback class must be initialized and have an application context 
 
 ## Not yet playable
 
-This stage supplies and connects a bridge component but does not yet make a playable game. There is not yet a game-session authentication flow, a supported per-version native extraction/compatibility matrix, a fully configured renderer/lifecycle, or a working launcher invocation that runs the Minecraft main class through `JLI_Launch` and attaches it to an active render loop. The existing `EngineLauncherNotIntegrated`/launch blockers must remain in place until these are implemented and tested. Merely seeing `libpojavexec.so` in the APK is not proof of a successful game launch.
+At the end of Stage 15 the bridge was not yet invokable as a game launch. Stage 16 adds the JNI `VMLauncher` entry point, guarded JLI executor, and a landscape game host that waits for a bound surface. The Microsoft sign-in flow and physical-device gameplay verification remain incomplete. Merely seeing `libpojavexec.so` in the APK is not proof of a successful game launch.
 
 The bundled native payload does not yet include all optional Pojav components (for example the separate exit hook/linker hook or all AWT compatibility targets). Some mod loaders, Java versions, renderers and Minecraft releases may require additional components and version-specific adaptation.
 

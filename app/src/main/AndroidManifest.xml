@@ -24,6 +24,12 @@
             android:screenOrientation="landscape"
             android:label="Pojav bridge diagnostics" />
         <activity
+            android:name=".core.engine.PojavGameActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:label="Minecraft Java" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="unspecified"
