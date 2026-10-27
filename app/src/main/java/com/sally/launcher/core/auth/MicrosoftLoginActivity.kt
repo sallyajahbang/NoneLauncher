@@ -271,7 +271,11 @@ private fun MicrosoftSignInScreen(
     onSignOut: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Scaffold(modifier = Modifier.fillMaxSize().launcherBackground(), containerColor = Color.Transparent) { padding ->
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(20.dp),

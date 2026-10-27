@@ -15,7 +15,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.sally.launcher.core.auth.LocalAccountActivity
 import com.sally.launcher.core.auth.LocalAccountRepository
 import com.sally.launcher.core.auth.MicrosoftLoginActivity
 import com.sally.launcher.core.engine.EngineDiagnosticsActivity
@@ -32,12 +31,15 @@ import com.sally.launcher.data.install.VersionInstaller
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.model.VersionCatalog
 import com.sally.launcher.data.runtime.RuntimeManager
+import com.sally.launcher.data.skin.SkinModel
+import com.sally.launcher.data.skin.SkinProvider
 import com.sally.launcher.data.storage.LauncherStorage
 import com.sally.launcher.data.version.VersionManifestRepository
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asImageBitmap
 
 class MainActivity : AppCompatActivity() {
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -63,7 +65,10 @@ class MainActivity : AppCompatActivity() {
             installJava = ::installJava,
             redownloadRuntime = ::confirmRedownloadRuntime,
             signInMicrosoft = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
-            manageLocalAccounts = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
+            setAccountStep = { step -> updateState { copy(accountStep = step) } },
+            activateAccount = ::activateAccount,
+            removeAccount = ::removeAccount,
+            addOfflineAccount = ::addOfflineAccount,
             prepareProfile = ::prepareLaunchProfile,
             probeJvm = ::probeJvmBridge,
             testJvm = ::runJliRuntimeSmokeTest,
@@ -96,6 +101,7 @@ class MainActivity : AppCompatActivity() {
             accountStatus = accountStatusSummary(),
         )
         applyKeepScreenOn(uiState.value.keepScreenOn)
+        refreshAccountState()
         setContent {
             SallyLauncherRoot(state = uiState.value, actions = actions)
         }
@@ -108,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         hideSystemBars()
         LocalAccountRepository.restoreSelectedSession(this)
         updateAccountStatus()
+        refreshAccountState()
         refreshInstalledVersionsAsync()
     }
 
@@ -315,6 +322,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 result.onSuccess { installed ->
                     selectVersion(installed.versionId)
+                    refreshAccountState()
                     showMessage(
                         if (forceRedownload) "Redownload complete" else "Version installed",
                         "Minecraft ${installed.versionId} is installed and its downloaded files passed available integrity checks. Libraries: ${installed.libraryFiles}. Assets: ${installed.assetFiles}. Data transferred this run: ${installed.downloadedBytes / (1024 * 1024)} MB."
@@ -566,17 +574,7 @@ class MainActivity : AppCompatActivity() {
         }
         val session = MinecraftLaunchSessionStore.current()
         if (session == null) {
-            showDialog(
-                LauncherDialog(
-                    title = "Choose an account",
-                    message = "Sign in with Microsoft for authenticated online play, or use a local/offline profile for single-player and servers explicitly configured to allow offline identities.",
-                    confirmText = "Microsoft sign-in",
-                    onConfirm = { startActivity(Intent(this, MicrosoftLoginActivity::class.java)) },
-                    dismissText = "Cancel",
-                    neutralText = "Local account",
-                    onNeutral = { startActivity(Intent(this, LocalAccountActivity::class.java)) },
-                ),
-            )
+            updateState { copy(accountStep = AccountStep.PICK) }
             return
         }
         val sessionError = session.validationError()
@@ -609,6 +607,55 @@ class MainActivity : AppCompatActivity() {
         val session = MinecraftLaunchSessionStore.current()
         if (session?.validationError() != null) MinecraftLaunchSessionStore.clear()
         updateState { copy(accountStatus = accountStatusSummary()) }
+    }
+
+    private fun activateAccount(name: String) {
+        runCatching { LocalAccountRepository.activate(this, name) }
+            .onFailure { error -> showMessage("Akun tidak bisa dipilih", error.message ?: "Coba lagi.") }
+        updateState { copy(accountStep = AccountStep.NONE) }
+        updateAccountStatus()
+        refreshAccountState()
+    }
+
+    private fun removeAccount(name: String) {
+        LocalAccountRepository.remove(this, name)
+        updateAccountStatus()
+        refreshAccountState()
+    }
+
+    private fun addOfflineAccount(name: String, model: SkinModel) {
+        runCatching { LocalAccountRepository.add(this, name) }
+            .onSuccess { profile ->
+                LocalAccountRepository.setSkinModel(this, profile.username, model)
+                updateState { copy(accountStep = AccountStep.NONE) }
+                updateAccountStatus()
+                refreshAccountState()
+            }
+            .onFailure { error -> showMessage("Akun belum disimpan", error.message ?: "Nama tidak valid.") }
+    }
+
+    /** Rebuilds the account list, the active identity and its default skin texture for the UI. */
+    private fun refreshAccountState() {
+        val session = MinecraftLaunchSessionStore.current()
+        val localName = session?.takeIf { it.accountType == MinecraftAccountType.LOCAL }?.username
+        val model = localName?.let { LocalAccountRepository.skinModel(this, it) } ?: SkinModel.STEVE
+        val savedNames = LocalAccountRepository.list(this).map { it.username }
+        val microsoftName = session?.takeIf { it.accountType == MinecraftAccountType.MICROSOFT }?.username
+        updateState {
+            copy(
+                accounts = savedNames,
+                activeAccount = session?.username,
+                microsoftAccount = microsoftName,
+                skinModel = model,
+                accountStatus = accountStatusSummary(),
+            )
+        }
+        ioExecutor.execute {
+            val image = runCatching { SkinProvider.load(applicationContext, model) }.getOrNull()?.asImageBitmap()
+            mainHandler.post {
+                if (!isFinishing && !isDestroyed) updateState { copy(skin = image) }
+            }
+        }
     }
 
     private fun setThemeMode(mode: ThemeMode) {

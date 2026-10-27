@@ -4,6 +4,7 @@ import android.content.Context
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.engine.OfflineAccountProfile
+import com.sally.launcher.data.skin.SkinModel
 
 /** Persists local profile names only. Offline identities never contain or persist access tokens. */
 object LocalAccountRepository {
@@ -52,6 +53,16 @@ object LocalAccountRepository {
             MinecraftLaunchSessionStore.clear()
         }
     }
+
+    /** Steve or Alex model chosen for a local profile. Defaults to Steve. */
+    fun skinModel(context: Context, rawName: String): SkinModel =
+        SkinModel.fromKey(preferences(context).getString(skinKey(rawName), null))
+
+    fun setSkinModel(context: Context, rawName: String, model: SkinModel) {
+        preferences(context).edit().putString(skinKey(rawName), model.name).apply()
+    }
+
+    private fun skinKey(name: String) = "skin_${name.trim().lowercase()}"
 
     /** Called after successful Microsoft auth so a stale local selection is not restored on next process start. */
     fun clearLocalSelectionForMicrosoft(context: Context) {

@@ -1,4 +1,3 @@
 <resources>
-    <color name="sally_background_top">#14285A</color>
-    <color name="sally_background_bottom">#0C0E13</color>
+    <color name="sally_background">#201A17</color>
 </resources>
