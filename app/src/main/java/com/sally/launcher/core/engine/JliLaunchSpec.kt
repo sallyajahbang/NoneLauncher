@@ -193,6 +193,10 @@ class JliLaunchSpecBuilder(context: Context) {
             val freetype = File(appNativeDir, "libfreetype.so")
             if (freetype.isFile) addDefault("-Dorg.lwjgl.freetype.libname", freetype.absolutePath)
         }
+        // JDK 17 cgroup/container probing and the /tmp perf-data mmap crash or hang on many Android devices.
+        for (flag in listOf("-XX:-UseContainerSupport", "-XX:-UsePerfData")) {
+            if (flag !in args) args += flag
+        }
         addDefault("-XX:ActiveProcessorCount", Runtime.getRuntime().availableProcessors().toString())
 
         val heapMb = runCatching {

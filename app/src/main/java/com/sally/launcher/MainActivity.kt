@@ -620,11 +620,26 @@ class MainActivity : AppCompatActivity() {
             jvmSmokeButton.isEnabled = true
             jvmSmokeButton.text = "Run Java runtime self-test"
             engineStatusText.text = "JVM test process did not return a result. It may have crashed during JVM initialization."
+            // Show whatever the JVM managed to print (and a fresh hs_err crash report) in the dialog.
+            val diagnostics = runCatching {
+                val log = java.io.File(filesDir, "diagnostics/jli-version.log")
+                val logText = if (log.isFile) log.readText().takeLast(2500) else ""
+                val crashReport = java.io.File(cacheDir, "jli-version-work")
+                    .listFiles { file -> file.name.startsWith("hs_err") }
+                    ?.filter { System.currentTimeMillis() - it.lastModified() < 120_000L }
+                    ?.maxByOrNull { it.lastModified() }
+                    ?.readText()?.take(2500).orEmpty()
+                buildString {
+                    if (logText.isNotBlank()) append("\n\nJVM output:\n").append(logText)
+                    if (crashReport.isNotBlank()) append("\n\nCrash report (hs_err):\n").append(crashReport)
+                }
+            }.getOrDefault("")
             MaterialAlertDialogBuilder(this)
                 .setTitle("JVM test timed out")
                 .setMessage(
                     "The separate JVM diagnostic process did not report a result within 45 seconds. " +
-                        "Sally's main UI process is isolated from that native test. Check Android logcat and the app-private diagnostics folder."
+                        "Sally's main UI process is isolated from that native test. Check Android logcat and the app-private diagnostics folder." +
+                        diagnostics
                 )
                 .setPositiveButton("OK", null)
                 .show()

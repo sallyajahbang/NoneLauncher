@@ -566,9 +566,21 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
         return makeSmokeResponse(env, "ERROR", "Could not redirect JVM diagnostic output.");
     }
 
-    char arg0[] = "java";
-    char arg1[] = "-version";
-    char* argv[] = {arg0, arg1, nullptr};
+    // Android-safe HotSpot flags: JDK 17's cgroup/container probing and /tmp perf-data mmap are
+    // common crash/hang sources on Android; CDS and G1 add risk to a one-shot -version check.
+    std::vector<std::string> argStorage = {
+        "java",
+        "-XX:-UseContainerSupport",
+        "-XX:-UsePerfData",
+        "-XX:+UseSerialGC",
+        "-Xshare:off",
+        "-XX:ErrorFile=" + work + "/hs_err_pid%p.log",
+        "-Djava.io.tmpdir=" + work,
+        "-version",
+    };
+    std::vector<char*> argv;
+    for (auto& argument : argStorage) argv.push_back(&argument[0]);
+    argv.push_back(nullptr);
     const std::string fullVersion = getReleaseValue(home, "JAVA_VERSION", "unknown");
     const std::string dotVersion = fullVersion.rfind("1.", 0) == 0
         ? fullVersion.substr(0, std::min<std::size_t>(3, fullVersion.size()))
@@ -577,7 +589,7 @@ Java_com_sally_launcher_core_engine_JliRuntimeSmokeTest_nativeRunVersion(
     // process-global VM state mapped after returning.
     gJliVersionAttempted = true;
     const jint exitCode = launch(
-        2, argv, 0, nullptr, 0, nullptr,
+        static_cast<int>(argStorage.size()), argv.data(), 0, nullptr, 0, nullptr,
         fullVersion.c_str(), dotVersion.c_str(), "java", "SallyLauncher",
         JNI_FALSE, JNI_TRUE, JNI_FALSE, 0);
 
