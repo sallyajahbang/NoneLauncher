@@ -12,7 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,8 +24,8 @@ import com.sally.launcher.data.model.MinecraftVersion
 
 // design.md §5.2 — NavigationRail items: Home, Versi, Java, Setting. Developer lives inside Setting.
 internal enum class LauncherTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Outlined.Home),
-    VERSIONS("Versi", Icons.Outlined.ListAlt),
+    HOME("Home", Icons.Outlined.PlayArrow),
+    VERSIONS("Versi", Icons.Outlined.Apps),
     JAVA("Java", Icons.Outlined.Terminal),
     SETTINGS("Setting", Icons.Outlined.Settings),
 }
@@ -99,79 +101,111 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
     SallyLauncherTheme(
         settings = ThemeSettings(mode = state.themeMode, amoled = state.amoledBlack, dynamicColor = state.dynamicColor),
     ) {
-      Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
-      ) {
-        var accountOpen by remember { mutableStateOf(false) }
-        val openAccount: () -> Unit = { accountOpen = true }
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+        ) {
+            var accountOpen by remember { mutableStateOf(false) }
+            val openAccount: () -> Unit = { accountOpen = true }
 
-        if (isWideScreen()) {
-            // design.md §5.1: landscape / expanded → NavigationRail on the left.
-            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.displayCutout)) {
-                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                    Spacer(Modifier.height(12.dp))
-                    LauncherTab.entries.forEach { tab ->
-                        NavigationRailItem(
-                            selected = state.tab == tab,
-                            onClick = { actions.navigate(tab) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label, maxLines = 1) },
-                        )
-                    }
+            if (isWideScreen()) {
+                Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout)) {
+                    SideRail(state, actions)
+                    LauncherTabContent(state, actions, openAccount, Modifier.weight(1f).fillMaxHeight())
                 }
-                LauncherTabContent(state, actions, openAccount, Modifier.weight(1f).fillMaxHeight())
+            } else {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    bottomBar = {
+                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                            LauncherTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = state.tab == tab,
+                                    onClick = { actions.navigate(tab) },
+                                    icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label = { Text(tab.label, maxLines = 1) },
+                                )
+                            }
+                        }
+                    },
+                ) { padding ->
+                    LauncherTabContent(state, actions, openAccount, Modifier.padding(padding))
+                }
             }
-        } else {
-            // design.md §5.1: portrait / compact → NavigationBar at the bottom.
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                bottomBar = {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                        LauncherTab.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = state.tab == tab,
-                                onClick = { actions.navigate(tab) },
-                                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                label = { Text(tab.label, maxLines = 1) },
-                            )
+
+            if (accountOpen) {
+                AccountSheet(state = state, actions = actions, onDismiss = { accountOpen = false })
+            }
+
+            state.dialog?.let { dialog ->
+                AlertDialog(
+                    onDismissRequest = actions.dismissDialog,
+                    icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                    title = { Text(dialog.title) },
+                    text = { Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) { Text(dialog.message) } },
+                    confirmButton = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                            if (dialog.dismissText != null) {
+                                TextButton(onClick = { actions.dismissDialog(); dialog.onDismiss?.invoke() }) { Text(dialog.dismissText) }
+                            }
+                            if (dialog.neutralText != null) {
+                                TextButton(onClick = { actions.dismissDialog(); dialog.onNeutral?.invoke() }) { Text(dialog.neutralText) }
+                            }
+                            TextButton(onClick = {
+                                actions.dismissDialog()
+                                dialog.onConfirm?.invoke()
+                            }) { Text(dialog.confirmText) }
                         }
-                    }
-                },
-            ) { padding ->
-                LauncherTabContent(state, actions, openAccount, Modifier.padding(padding))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
+    }
+}
 
-        if (accountOpen) {
-            AccountSheet(state = state, actions = actions, onDismiss = { accountOpen = false })
+/** Icon-only sidebar: logo on top, main sections in the middle, settings pinned at the bottom. */
+@Composable
+private fun SideRail(state: LauncherUiState, actions: LauncherActions) {
+    Column(
+        Modifier.fillMaxHeight().width(88.dp).background(MaterialTheme.colorScheme.surfaceContainerLowest).padding(vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier.size(46.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("S", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
         }
+        Spacer(Modifier.height(8.dp))
+        listOf(LauncherTab.HOME, LauncherTab.VERSIONS, LauncherTab.JAVA).forEach { tab ->
+            RailButton(tab.icon, tab.label, selected = state.tab == tab) { actions.navigate(tab) }
+        }
+        Spacer(Modifier.weight(1f))
+        RailButton(LauncherTab.SETTINGS.icon, LauncherTab.SETTINGS.label, selected = state.tab == LauncherTab.SETTINGS) {
+            actions.navigate(LauncherTab.SETTINGS)
+        }
+    }
+}
 
-        state.dialog?.let { dialog ->
-            AlertDialog(
-                onDismissRequest = actions.dismissDialog,
-                icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-                title = { Text(dialog.title) },
-                text = { Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) { Text(dialog.message) } },
-                confirmButton = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                        if (dialog.dismissText != null) {
-                            TextButton(onClick = { actions.dismissDialog(); dialog.onDismiss?.invoke() }) { Text(dialog.dismissText) }
-                        }
-                        if (dialog.neutralText != null) {
-                            TextButton(onClick = { actions.dismissDialog(); dialog.onNeutral?.invoke() }) { Text(dialog.neutralText) }
-                        }
-                        TextButton(onClick = {
-                            actions.dismissDialog()
-                            dialog.onConfirm?.invoke()
-                        }) { Text(dialog.confirmText) }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
+@Composable
+private fun RailButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    val container = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        Modifier.width(72.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            Modifier.size(width = 56.dp, height = 36.dp).clip(RoundedCornerShape(18.dp)).background(container),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = tint)
         }
-      }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint, maxLines = 1)
     }
 }
 
@@ -191,154 +225,204 @@ private fun isWideScreen(): Boolean = LocalConfiguration.current.screenWidthDp >
 private fun activeVersion(state: LauncherUiState): MinecraftVersion? =
     state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
 
-// ---------------------------------------------------------------- Home (design.md §7.1)
+// ---------------------------------------------------------------- Home
 
 @Composable
 private fun HomeScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
     val active = activeVersion(state)
     val javaReady = state.installedJavaMajors.isNotEmpty()
     Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        ScreenHeader(
-            title = "Home",
-            subtitle = state.accountStatus,
-            onOpenAccount = onOpenAccount,
-            trailing = {
-                IconButton(onClick = { actions.navigate(LauncherTab.SETTINGS) }) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Setting")
-                }
-            },
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatusChip("${state.installedVersions.size} versi terpasang", state.installedVersions.isNotEmpty())
+            StatusChip(if (javaReady) "Java siap" else "Java belum ada", javaReady)
+        }
         if (isWideScreen()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                HeroCard(active, Modifier.weight(1f))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HomeInfoCards(state, actions, active, javaReady)
-                }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
+                HeroCard(state, actions, Modifier.weight(2.2f))
+                ProfileCard(state, onOpenAccount, Modifier.weight(1f))
             }
         } else {
-            HeroCard(active, Modifier.fillMaxWidth())
-            HomeInfoCards(state, actions, active, javaReady)
+            HeroCard(state, actions, Modifier.fillMaxWidth())
+            ProfileCard(state, onOpenAccount, Modifier.fillMaxWidth())
         }
-        // design.md §1: Play always visible; "Main" pill per wireframe §7.1.
-        Button(
-            onClick = actions.play,
-            enabled = active != null && state.busyAction == null,
-            shape = RoundedCornerShape(50),
-            modifier = Modifier.fillMaxWidth().height(64.dp),
-        ) {
-            Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("MAIN", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
-        state.busyAction?.let {
-            Text(state.runtimeStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Ringkasan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            LatestReleaseTile(state, actions)
+            InfoTile(
+                icon = Icons.Outlined.Terminal,
+                label = "Java",
+                value = if (javaReady) "Siap" else "Belum ada",
+                body = if (javaReady) "Terpasang: Java ${state.installedJavaMajors.joinToString(", ")}" else "Java dipilih otomatis sesuai versi.",
+                action = "Kelola Java",
+                onAction = { actions.navigate(LauncherTab.JAVA) },
+            )
+            InfoTile(
+                icon = Icons.Outlined.FolderOpen,
+                label = "Versi",
+                value = "${state.installedVersions.size} terpasang",
+                body = "Pasang, pakai, atau perbaiki versi.",
+                action = "Buka Versi",
+                onAction = { actions.navigate(LauncherTab.VERSIONS) },
+            )
         }
     }
 }
 
 @Composable
-private fun HeroCard(active: MinecraftVersion?, modifier: Modifier) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+private fun HeroCard(state: LauncherUiState, actions: LauncherActions, modifier: Modifier) {
+    val active = activeVersion(state)
+    val busy = state.busyAction != null
+    val javaReady = state.installedJavaMajors.isNotEmpty()
+    Surface(
+        modifier = modifier.heightIn(min = 240.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
     ) {
-        Column(
-            Modifier.fillMaxWidth().heightIn(min = 200.dp).padding(24.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                "MINECRAFT: JAVA EDITION",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.4.sp,
-            )
-            Column {
+        Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    active?.id ?: "Belum ada versi",
-                    style = MaterialTheme.typography.displaySmall,
+                    if (active != null) "Minecraft ${active.id}" else "Minecraft",
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
+                Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondary) {
+                    Text(
+                        if (active != null) versionFilterLabel(active.type) else "Belum ada versi",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                    )
+                }
                 Text(
-                    if (active != null) versionFilterLabel(active.type) else "Pasang satu versi di tab Versi",
+                    when {
+                        active == null -> "Pasang satu versi di tab Versi untuk mulai bermain."
+                        javaReady -> "Siap dimainkan dengan Java ${state.installedJavaMajors.joinToString(", ")}."
+                        else -> "Java belum terpasang. Tekan perbaiki untuk memasangnya."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .8f),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .85f),
                 )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = actions.play,
+                    enabled = active != null && !busy,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 22.dp, vertical = 14.dp),
+                ) {
+                    Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (active != null) "LAUNCH ${active.id}" else "LAUNCH", fontWeight = FontWeight.Bold)
+                }
+                IconButton(
+                    onClick = { active?.let { actions.installVersion(it.id) } },
+                    enabled = active != null && !busy,
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Perbaiki otomatis", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun HomeInfoCards(state: LauncherUiState, actions: LauncherActions, active: MinecraftVersion?, javaReady: Boolean) {
-    val busy = state.busyAction != null
-    SimpleCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f)) {
-                Text("Versi", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(active?.id ?: "Belum dipilih", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+private fun ProfileCard(state: LauncherUiState, onOpenAccount: () -> Unit, modifier: Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(
+            Modifier.fillMaxWidth().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Person, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick = { actions.navigate(LauncherTab.VERSIONS) }) { Text(if (active == null) "Pilih" else "Ganti") }
-        }
-    }
-    SimpleCard(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Outlined.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Column(Modifier.weight(1f)) {
-                Text("Java", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    if (javaReady) "Java ${state.installedJavaMajors.joinToString(", ")} terpasang" else "Java belum terpasang",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (javaReady) {
-                StatusPill("Java ✓", true)
-            } else {
-                FilledTonalButton(onClick = actions.installRuntime, enabled = active != null && !busy) { Text("Perbaiki") }
+            Text("Akun", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                state.accountStatus,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Button(onClick = onOpenAccount, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Text("Kelola akun")
             }
         }
     }
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatusChip(if (javaReady) "Java ✓" else "⚠ Perlu diunduh", javaReady)
-        StatusChip(if (active != null) "Versi terpasang ✓" else "⚠ Belum ada versi", active != null)
+}
+
+@Composable
+private fun LatestReleaseTile(state: LauncherUiState, actions: LauncherActions) {
+    val latest = state.versions.filter { it.type.equals("release", true) }.maxByOrNull { it.releaseTime }
+    val installed = latest != null && state.installedVersions.any { it.id == latest.id }
+    val action = latest?.let { if (installed) "Pakai di Home" else "Pasang" }
+    val onAction: (() -> Unit)? = latest?.let { v ->
+        { if (installed) actions.selectVersion(v.id) else actions.installVersion(v.id) }
     }
-    OutlinedButton(
-        onClick = { active?.let { actions.installVersion(it.id) } },
-        enabled = active != null && !busy,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Icon(Icons.Outlined.Build, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text("Perbaiki otomatis")
+    InfoTile(
+        icon = Icons.Outlined.Extension,
+        label = "Rilis terbaru",
+        value = latest?.id ?: "Memuat…",
+        body = latest?.let { "Vanilla · ${it.releaseTime.take(10)}" } ?: "Mengambil katalog versi.",
+        action = action,
+        onAction = onAction,
+    )
+}
+
+@Composable
+private fun InfoTile(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    body: String,
+    action: String?,
+    onAction: (() -> Unit)?,
+) {
+    Surface(modifier = Modifier.width(250.dp), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (action != null && onAction != null) {
+                Spacer(Modifier.height(4.dp))
+                FilledTonalButton(onClick = onAction, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                    Text(action)
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun StatusChip(text: String, ok: Boolean) {
-    AssistChip(
-        onClick = {},
-        label = { Text(text) },
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = if (ok) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
-            labelColor = if (ok) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onErrorContainer,
-        ),
-    )
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = if (ok) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (ok) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+        )
+    }
 }
 
 // ---------------------------------------------------------------- Versi (design.md §7.3)
