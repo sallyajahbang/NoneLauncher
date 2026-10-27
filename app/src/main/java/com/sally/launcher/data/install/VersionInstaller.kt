@@ -4,20 +4,19 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import com.sally.launcher.data.model.MinecraftVersion
-import com.sally.launcher.data.download.ResilientDownloader
 import com.sally.launcher.data.storage.LauncherStorage
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Callable
-import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Downloads official Minecraft version data, the client JAR, common Java libraries,
@@ -47,11 +46,7 @@ class VersionInstaller(context: Context) {
         val label: String,
     )
 
-    fun installVersion(
-        version: MinecraftVersion,
-        onProgress: (String) -> Unit,
-        forceRedownload: Boolean = false,
-    ): Result {
+    fun installVersion(version: MinecraftVersion, onProgress: (String) -> Unit): Result {
         requireHttps(version.url)
         val id = safeId(version.id)
         val versionDir = File(versionsDir, id)
@@ -60,7 +55,7 @@ class VersionInstaller(context: Context) {
         val metadataFile = File(versionDir, "$id.json")
         val metadataPart = File(versionDir, "$id.json.part")
         onProgress("Downloading version metadata…")
-        downloadTo(version.url, metadataPart, null, -1L, status = onProgress) { _, _ -> }
+        downloadTo(version.url, metadataPart, null, -1L) { _, _ -> }
         replacePart(metadataPart, metadataFile)
 
         val metadata = try {
@@ -80,26 +75,25 @@ class VersionInstaller(context: Context) {
         val clientSize = client.optLong("size", -1L)
         val clientJar = File(versionDir, "$id.jar")
         var downloadedBytes = 0L
-        if (forceRedownload || !isValidFile(clientJar, clientSha1, clientSize)) {
+        if (!isValidFile(clientJar, clientSha1, clientSize)) {
             onProgress("Downloading Minecraft $id client…")
             val part = File(versionDir, "$id.jar.part")
-            if (forceRedownload) part.delete()
-            downloadedBytes += downloadTo(clientUrl, part, clientSha1, clientSize, status = onProgress) { current, total ->
+            downloadedBytes += downloadTo(clientUrl, part, clientSha1, clientSize) { current, total ->
                 onProgress(formatProgress("Minecraft $id", current, total))
             }
             replacePart(part, clientJar)
         }
 
         val libraryTasks = buildLibraryTasks(metadata.optJSONArray("libraries"))
-        val assetTasks = buildAssetTasks(metadata, onProgress, forceRedownload)
+        val assetTasks = buildAssetTasks(metadata, onProgress)
         val allTasks = deduplicateTasks(libraryTasks + assetTasks)
-        val pending = if (forceRedownload) allTasks else allTasks.filterNot { isValidFile(it.destination, it.sha1, it.expectedSize) }
+        val pending = allTasks.filterNot { isValidFile(it.destination, it.sha1, it.expectedSize) }
 
         if (pending.isEmpty()) {
             onProgress("All libraries and assets are already present and verified")
         } else {
-            onProgress("Downloading ${pending.size} dependency files (up to ${MAX_PARALLEL_DOWNLOADS} at once)…")
-            downloadedBytes += downloadTasks(pending, onProgress, forceRedownload)
+            onProgress("Downloading ${pending.size} dependency files (up to 4 at once)…")
+            downloadedBytes += downloadTasks(pending, onProgress)
         }
 
         onProgress("Install files ready: ${libraryTasks.size} library artifacts, ${assetTasks.size} assets")
@@ -197,7 +191,7 @@ class VersionInstaller(context: Context) {
         return normalizedRequired == normalizedActual
     }
 
-    private fun buildAssetTasks(metadata: JSONObject, onProgress: (String) -> Unit, forceRedownload: Boolean): List<DownloadTask> {
+    private fun buildAssetTasks(metadata: JSONObject, onProgress: (String) -> Unit): List<DownloadTask> {
         val assetIndex = metadata.optJSONObject("assetIndex") ?: return emptyList()
         val assetIndexId = safeId(assetIndex.optString("id").ifBlank { metadata.optString("assets", "legacy") })
         val indexUrl = assetIndex.optString("url")
@@ -206,11 +200,10 @@ class VersionInstaller(context: Context) {
         val indexSize = assetIndex.optLong("size", -1L)
         ensureDirectory(File(assetsDir, "indexes"))
         val indexFile = File(File(assetsDir, "indexes"), "$assetIndexId.json")
-        if (forceRedownload || !isValidFile(indexFile, indexSha1, indexSize)) {
+        if (!isValidFile(indexFile, indexSha1, indexSize)) {
             onProgress("Downloading asset index $assetIndexId…")
             val part = File(indexFile.parentFile, "${indexFile.name}.part")
-            if (forceRedownload) part.delete()
-            downloadTo(indexUrl, part, indexSha1, indexSize, status = onProgress) { _, _ -> }
+            downloadTo(indexUrl, part, indexSha1, indexSize) { _, _ -> }
             replacePart(part, indexFile)
         }
 
@@ -253,40 +246,19 @@ class VersionInstaller(context: Context) {
         return byPath.values.toList()
     }
 
-    private fun downloadTasks(tasks: List<DownloadTask>, onProgress: (String) -> Unit, forceRedownload: Boolean): Long {
+    private fun downloadTasks(tasks: List<DownloadTask>, onProgress: (String) -> Unit): Long {
         ensureDirectory(librariesDir)
         ensureDirectory(File(assetsDir, "objects"))
-        val pool = Executors.newFixedThreadPool(MAX_PARALLEL_DOWNLOADS)
+        val pool = Executors.newFixedThreadPool(4)
         val completion = ExecutorCompletionService<Long>(pool)
-        val aggregateBytes = AtomicLong(0L)
-        val nextProgressThreshold = AtomicLong(1L * 1024L * 1024L)
-        val expectedTotal = tasks.fold(0L) { sum, task ->
-            if (task.expectedSize > 0L && Long.MAX_VALUE - sum >= task.expectedSize) sum + task.expectedSize else sum
-        }
         var completed = 0
         var totalBytes = 0L
-        var firstFailure: IOException? = null
-        val futures = mutableListOf<Future<Long>>()
         try {
             tasks.forEach { task ->
-                futures += completion.submit(Callable {
+                completion.submit(Callable {
                     ensureDirectory(task.destination.parentFile ?: throw IOException("Invalid destination"))
                     val part = File(task.destination.parentFile, "${task.destination.name}.part")
-                    if (forceRedownload) part.delete()
-                    var lastCurrent = part.takeIf { it.isFile }?.length() ?: 0L
-                    val bytes = downloadTo(task.url, part, task.sha1, task.expectedSize, status = onProgress) { current, _ ->
-                        if (current < lastCurrent) lastCurrent = 0L // Server did not support resume and restarted at byte zero.
-                        val delta = (current - lastCurrent).coerceAtLeast(0L)
-                        lastCurrent = current
-                        if (delta > 0L) {
-                            val totalCurrent = aggregateBytes.addAndGet(delta)
-                            val threshold = nextProgressThreshold.get()
-                            if (totalCurrent >= threshold && nextProgressThreshold.compareAndSet(threshold, totalCurrent + 1024L * 1024L)) {
-                                val totalLabel = if (expectedTotal > 0L) " / ${expectedTotal / (1024 * 1024)} MB" else ""
-                                onProgress("Downloading libraries/assets: ${totalCurrent / (1024 * 1024)} MB$totalLabel · ${MAX_PARALLEL_DOWNLOADS} parallel connections")
-                            }
-                        }
-                    }
+                    val bytes = downloadTo(task.url, part, task.sha1, task.expectedSize) { _, _ -> }
                     replacePart(part, task.destination)
                     bytes
                 })
@@ -294,33 +266,18 @@ class VersionInstaller(context: Context) {
             while (completed < tasks.size) {
                 try {
                     totalBytes += completion.take().get()
+                    completed++
+                    if (completed % 10 == 0 || completed == tasks.size) {
+                        onProgress("Downloading libraries/assets: $completed / ${tasks.size} files")
+                    }
                 } catch (e: ExecutionException) {
                     val cause = e.cause ?: e
-                    if (firstFailure == null) {
-                        firstFailure = IOException("A dependency download failed: ${cause.message ?: cause.javaClass.simpleName}", cause)
-                        onProgress("A dependency failed after automatic retries. Stopping other downloads; partial files are kept for Retry.")
-                        futures.forEach { future -> if (!future.isDone) future.cancel(true) }
-                        pool.shutdownNow()
-                    }
-                } catch (_: CancellationException) {
-                    // Expected after a sibling download fails; the original failure is reported below.
-                } finally {
-                    completed++
-                    if (completed % 3 == 0 || completed == tasks.size) {
-                        onProgress("Downloading dependencies: $completed / ${tasks.size} files processed (${MAX_PARALLEL_DOWNLOADS} parallel connections)")
-                    }
+                    throw IOException("A dependency download failed: ${cause.message ?: cause.javaClass.simpleName}", cause)
                 }
             }
         } finally {
             pool.shutdownNow()
-            try {
-                // Avoid a manual Retry racing with workers that were interrupted during a network read.
-                pool.awaitTermination(35, TimeUnit.SECONDS)
-            } catch (interrupted: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
         }
-        firstFailure?.let { throw it }
         return totalBytes
     }
 
@@ -329,18 +286,52 @@ class VersionInstaller(context: Context) {
         destination: File,
         expectedSha1: String?,
         expectedSize: Long,
-        status: (String) -> Unit = {},
         progress: (Long, Long) -> Unit,
-    ): Long = ResilientDownloader.download(
-        urlString = urlString,
-        destination = destination,
-        expectedSize = expectedSize,
-        expectedDigest = expectedSha1,
-        digestAlgorithm = if (expectedSha1 != null) "SHA-1" else null,
-        maximumBytes = MAX_DOWNLOAD_FILE_BYTES,
-        onProgress = progress,
-        onStatus = status,
-    )
+    ): Long {
+        requireHttps(urlString)
+        var connection: HttpURLConnection? = null
+        try {
+            connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 45_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "SallyLauncher/0.3.0 (Android)")
+            }
+            val code = connection.responseCode
+            if (code !in 200..299) throw IOException("Download failed with HTTP $code")
+            val total = connection.contentLengthLong
+            var current = 0L
+            BufferedInputStream(connection.inputStream).use { input ->
+                FileOutputStream(destination).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 4)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        current += count
+                        progress(current, total)
+                    }
+                    output.fd.sync()
+                }
+            }
+            if (expectedSize > 0 && current != expectedSize) {
+                destination.delete()
+                throw IOException("File size mismatch for ${destination.name}")
+            }
+            if (expectedSha1 != null && !sha1(destination).equals(expectedSha1, ignoreCase = true)) {
+                destination.delete()
+                throw IOException("SHA-1 verification failed for ${destination.name}; file rejected")
+            }
+            return current
+        } catch (e: Exception) {
+            destination.delete()
+            if (e is IOException) throw e
+            throw IOException("Download failed: ${e.message ?: e.javaClass.simpleName}", e)
+        } finally {
+            connection?.disconnect()
+        }
+    }
 
     private fun isValidFile(file: File, expectedSha1: String?, expectedSize: Long): Boolean {
         if (!file.isFile || file.length() <= 0L) return false
@@ -394,9 +385,4 @@ class VersionInstaller(context: Context) {
 
     private fun formatProgress(label: String, current: Long, total: Long): String =
         if (total > 0L) "$label: ${current / 1024} / ${total / 1024} KB" else "$label: ${current / 1024} KB"
-
-    private companion object {
-        const val MAX_PARALLEL_DOWNLOADS = 6
-        const val MAX_DOWNLOAD_FILE_BYTES = 1L * 1024L * 1024L * 1024L
-    }
 }

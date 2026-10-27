@@ -246,9 +246,9 @@ class JliLaunchSpecBuilder(context: Context) {
             else -> versionText.takeWhile { it.isDigit() }.toIntOrNull()
         } ?: throw IOException("Cannot determine Java runtime version from ${File(runtimeHome, "release").absolutePath}.")
 
-        if (javaMajor !in setOf(8, 17, 21, 25)) {
+        if (javaMajor != 8 && javaMajor != 17) {
             throw IOException(
-                "The bundled Android AWT toolkit supports Java 8, 17, 21, and 25 only; Java $javaMajor is not supported by this engine build."
+                "The bundled Android AWT toolkit supports Java 8 and 17 only; Java $javaMajor is not supported by this engine build."
             )
         }
         val cacioDirectoryName = if (javaMajor == 8) "caciocavallo" else "caciocavallo17"
@@ -282,12 +282,7 @@ class JliLaunchSpecBuilder(context: Context) {
         } else {
             addDefault("-Dawt.toolkit", "com.github.caciocavallosilano.cacio.ctc.CTCToolkit")
             addDefault("-Djava.awt.graphicsenv", "com.github.caciocavallosilano.cacio.ctc.CTCGraphicsEnvironment")
-            // Amethyst uses the cacio-tta javaagent instead of the preload class loader,
-            // because the class loader breaks mod loaders.
-            val agent = cacioJars.firstOrNull { it.name.contains("cacio-tta") }
-            if (agent != null && args.none { it.startsWith("-javaagent:") && it.contains("cacio-tta") }) {
-                args += "-javaagent:" + agent.absolutePath
-            }
+            addDefault("-Djava.system.class.loader", "com.github.caciocavallosilano.cacio.ctc.CTCPreloadClassLoader")
 
             val moduleArguments = listOf(
                 "--add-exports=java.desktop/java.awt=ALL-UNNAMED",

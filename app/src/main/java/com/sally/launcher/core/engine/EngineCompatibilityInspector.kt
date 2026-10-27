@@ -86,7 +86,7 @@ object EngineCompatibilityInspector {
         }
 
         val javaMajor = parseJavaMajor(releaseValue(releaseText, "JAVA_VERSION"))
-        if (javaMajor == 8 || javaMajor == 17 || javaMajor == 21 || javaMajor == 25) {
+        if (javaMajor == 8 || javaMajor == 17) {
             val component = if (javaMajor == 8) "caciocavallo" else "caciocavallo17"
             val componentDir = File(minecraftRoot, component)
             val requiredJars = if (javaMajor == 8) {
@@ -109,7 +109,7 @@ object EngineCompatibilityInspector {
             checks += EngineRequirement(
                 id = "runtime-java-awt-version",
                 ready = false,
-                detail = "This engine supports Java 8, 17, 21, and 25 only because its bundled Caciocavallo AWT toolkits do not match Java $javaMajor; this runtime cannot be launched safely yet.",
+                detail = "This engine supports Java 8 and 17 only because its bundled Caciocavallo AWT toolkits do not match Java $javaMajor; this runtime cannot be launched safely yet.",
             )
         } else {
             checks += EngineRequirement(

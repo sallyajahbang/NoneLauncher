@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import com.google.android.material.button.MaterialButton
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -17,8 +18,8 @@ class PojavEngineDiagnosticsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(12, 18, 28)
-        window.navigationBarColor = Color.rgb(12, 18, 28)
+        window.statusBarColor = Color.rgb(7, 7, 26)
+        window.navigationBarColor = Color.rgb(7, 7, 26)
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -39,7 +40,7 @@ class PojavEngineDiagnosticsActivity : AppCompatActivity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            setBackgroundColor(0xD91B2430.toInt())
+            setBackgroundColor(0xE607071A.toInt())
         }
         statusText = TextView(this).apply {
             textSize = 14f
@@ -61,7 +62,7 @@ class PojavEngineDiagnosticsActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
-        val close = Button(this).apply {
+        val close = MaterialButton(this).apply {
             text = "Close diagnostics"
             isAllCaps = false
             setOnClickListener { finish() }

@@ -1,11 +1,39 @@
 <resources>
-    <style name="Theme.SallyLauncher" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/sally_primary</item>
-        <item name="colorSecondary">@color/sally_secondary</item>
-        <item name="android:fontFamily">sans</item>
-        <item name="android:statusBarColor">?attr/colorSurface</item>
-        <item name="android:navigationBarColor">?attr/colorSurface</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    <style name="Theme.SallyLauncher" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/cosmic_violet</item>
+        <item name="colorOnPrimary">@color/cosmic_void</item>
+        <item name="colorPrimaryContainer">@color/cosmic_violet_dark</item>
+        <item name="colorOnPrimaryContainer">@color/cosmic_text</item>
+        <item name="colorSecondary">@color/cosmic_cyan</item>
+        <item name="colorOnSecondary">@color/cosmic_void</item>
+        <item name="colorSurface">@color/cosmic_surface</item>
+        <item name="colorOnSurface">@color/cosmic_text</item>
+        <item name="colorSurfaceVariant">@color/cosmic_surface_high</item>
+        <item name="colorOnSurfaceVariant">@color/cosmic_text_dim</item>
+        <item name="colorOutline">@color/cosmic_outline</item>
+        <item name="colorOutlineVariant">@color/cosmic_outline</item>
+        <item name="colorError">@color/cosmic_error</item>
+        <item name="android:colorBackground">@color/cosmic_void</item>
+        <item name="android:windowBackground">@color/cosmic_void</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/cosmic_void</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Sally.Dialog</item>
+    </style>
+
+    <style name="ThemeOverlay.Sally.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/cosmic_surface</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Sally.Dialog</item>
+    </style>
+
+    <style name="ShapeAppearance.Sally.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <style name="Theme.SallyLauncher.Splash" parent="Theme.SallyLauncher">
+        <item name="android:windowBackground">@color/cosmic_void</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

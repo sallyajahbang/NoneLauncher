@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.SallyLauncher.Splash" parent="Theme.SallyLauncher">
+        <item name="android:windowBackground">@color/cosmic_void</item>
+        <item name="android:windowSplashScreenBackground">@color/cosmic_void</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_star</item>
+    </style>
+</resources>
