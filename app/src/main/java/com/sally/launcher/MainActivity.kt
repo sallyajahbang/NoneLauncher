@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var runtimeStatusText: TextView
     private lateinit var prepareLaunchButton: MaterialButton
     private lateinit var engineDiagnosticsButton: MaterialButton
+    private lateinit var pojavBridgeDiagnosticsButton: MaterialButton
     private lateinit var jvmBridgeButton: MaterialButton
     private lateinit var jvmSmokeButton: MaterialButton
     private lateinit var engineStatusText: TextView
@@ -170,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         engineContent.addView(textView("JVM startup diagnostics · game bridge pending", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "Probe the runtime's native launcher, then optionally run a real Java -version startup test. Neither action launches Minecraft; Android LWJGL/GLFW, rendering, and game input are still being integrated.",
+            "The Pojav-derived Android GLFW/LWJGL bridge payload is now bundled. You can probe the native surface/input bridge below; a complete renderer, authenticated session, and Minecraft JVM launch are still pending.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
@@ -208,6 +209,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
         engineContent.addView(engineDiagnosticsButton)
+        addGap(engineContent, 8)
+        pojavBridgeDiagnosticsButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Test Pojav surface bridge"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, com.sally.launcher.core.engine.PojavEngineDiagnosticsActivity::class.java))
+            }
+        }
+        engineContent.addView(pojavBridgeDiagnosticsButton)
         addGap(engineContent, 8)
         engineStatusText = textView(
             "Profile not prepared. Install version files and a compatible Java runtime first.",

@@ -48,6 +48,13 @@ android {
             version '3.22.1'
         }
     }
+
+    packagingOptions {
+        jniLibs {
+            // Ensure System.loadLibrary and the runtime linker can find the bundled engine libraries.
+            useLegacyPackaging true
+        }
+    }
 }
 
 dependencies {

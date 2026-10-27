@@ -88,7 +88,12 @@ class LaunchProfileBuilder(context: Context) {
             val suffix = if (libraryResult.missing.size > 5) " and ${libraryResult.missing.size - 5} more" else ""
             throw IOException("${libraryResult.missing.size} required library files are missing: $examples$suffix. Install version files again.")
         }
-        val classpathEntries = (libraryResult.present + clientJar).distinctBy { it.canonicalPath }
+        // The Android-patched GLFW API must win class resolution over vanilla LWJGL jars.
+        // Keep this entry first; otherwise the desktop GLFW class can load desktop natives and crash.
+        val patchedGlfwJar = PojavEnginePayloadInstaller(appContext)
+            .installPatchedGlfwClasses(minecraftRoot)
+        val classpathEntries = (listOf(patchedGlfwJar) + libraryResult.present + clientJar)
+            .distinctBy { it.canonicalPath }
         val classpath = classpathEntries.joinToString(File.pathSeparator) { it.absolutePath }
         val assetIndexMetadata = metadata.optJSONObject("assetIndex")
         val rawAssetIndexId = assetIndexMetadata?.optString("id")

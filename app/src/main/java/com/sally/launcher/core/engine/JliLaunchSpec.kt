@@ -64,11 +64,20 @@ class JliLaunchSpecBuilder(context: Context) {
         }.toList()
 
         val vmArguments = profile.jvmArguments.toMutableList()
-        if (vmArguments.none { it.startsWith("-Djava.library.path=") }) {
-            // Include the APK's nativeLibraryDir as well as runtime/game directories. Without
-            // this, Android-packaged LWJGL/GL4ES libraries cannot be found by System.loadLibrary.
-            vmArguments += "-Djava.library.path=${allLibraryDirs.joinToString(File.pathSeparator) { it.absolutePath }}"
-        }
+        // Mojang version JSON frequently sets -Djava.library.path to only the extracted game
+        // natives directory. Replace/extend that property so System.loadLibrary can also find
+        // APK-packaged Pojav LWJGL/GL4ES/OpenAL and the selected Android JRE's native libraries.
+        val propertyIndex = vmArguments.indexOfFirst { it.startsWith("-Djava.library.path=") }
+        val existingNativePath = if (propertyIndex >= 0) {
+            vmArguments[propertyIndex].substringAfter('=').split(File.pathSeparator).filter { it.isNotBlank() }
+        } else emptyList()
+        val completeNativePath = LinkedHashSet<String>().apply {
+            addAll(allLibraryDirs.map { it.absolutePath })
+            addAll(existingNativePath)
+        }.joinToString(File.pathSeparator)
+        val nativePathArgument = "-Djava.library.path=$completeNativePath"
+        if (propertyIndex >= 0) vmArguments[propertyIndex] = nativePathArgument
+        else vmArguments += nativePathArgument
         if (vmArguments.none { it.startsWith("-Djava.io.tmpdir=") }) {
             vmArguments += "-Djava.io.tmpdir=${tempDirectory.absolutePath}"
         }
@@ -92,9 +101,22 @@ class JliLaunchSpecBuilder(context: Context) {
             "HOME" to appContext.filesDir.canonicalPath,
             "TMPDIR" to tempDirectory.absolutePath,
             "TMP" to tempDirectory.absolutePath,
+            "PATH" to (File(runtimeHome, "bin").absolutePath + File.pathSeparator + System.getenv("PATH").orEmpty()),
             "CLASSPATH" to profile.classpath,
             "MINECRAFT_DIR" to minecraftRoot.absolutePath,
             "SALLY_NATIVE_LIBRARY_DIR" to (appNativeDir?.absolutePath ?: ""),
+            // Pojav's Android GLFW bridge reads these variables before initializing EGL/GL4ES.
+            "POJAV_NATIVEDIR" to (appNativeDir?.absolutePath ?: ""),
+            "POJAV_RENDERER" to "opengles2",
+            "LIBGL_ES" to "2",
+            "LIBGL_MIPMAP" to "3",
+            "LIBGL_NOERROR" to "1",
+            "LIBGL_NOINTOVLHACK" to "1",
+            "LIBGL_NORMALIZE" to "1",
+            "FORCE_VSYNC" to "true",
+            "MESA_GLSL_CACHE_DIR" to appContext.cacheDir.canonicalPath,
+            "AWTSTUB_WIDTH" to "854",
+            "AWTSTUB_HEIGHT" to "480",
         )
         val ldLibraryPath = LinkedHashSet<String>().apply {
             addAll(allLibraryDirs.map { it.absolutePath })

@@ -1,6 +1,6 @@
-# Sally Launcher — Stage 9
+# Sally Launcher — Stage 15
 
-This is a new Android Minecraft: Java Edition launcher project using Kotlin, AndroidX, and a Material 3-style interface. The project now has an official version catalog, version-file installer, Android Java-runtime installer, launch-profile resolver, JNI/GLES diagnostics, and a JLI launch-request builder.
+This is a new Android Minecraft: Java Edition launcher project using Kotlin, AndroidX, and a Material 3-style interface. The project includes an official version catalog, version-file installer, Android Java-runtime installer, launch-profile resolver, JNI/GLES diagnostics, JLI launch-request builder, and a Pojav-derived Android GLFW/LWJGL bridge payload.
 
 ## Previous-stage foundation (Stages 1–8)
 
@@ -29,9 +29,11 @@ chmod +x ./gradlew
 
 APK path: `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Upstream relationship
+## Stage 15 — Pojav Android engine bridge
 
-Pojav/Amethyst code was used as an architectural reference only for the investigation. This new request builder does not copy its native launcher implementation or native artifacts. Before incorporating upstream source or binaries, review the applicable license and preserve required notices.
+Stage 15 vendors the LGPL-3.0 Pojav Android JNI compatibility source, its matching patched GLFW classes JAR, and native LWJGL/GL4ES/OpenAL payloads for four Android ABIs. CMake builds `libpojavexec.so`; the launch-profile builder installs the patched GLFW JAR and places it first on the JVM classpath. A `PojavGameSurfaceView` now provides a surface + input bridge component.
+
+**This is still not playable Minecraft.** The native bridge has not been proven to compile in Android CI or load on a physical device, and the app does not yet invoke the Minecraft main class through JLI_Launch with a complete renderer/game lifecycle and authenticated session. The Play button remains gated. Do not infer gameplay readiness from the presence of the libraries. See [Stage 15 bridge notes](docs/STAGE15_POJAV_ENGINE_BRIDGE.md) and `app/src/main/assets/engine/pojav/THIRD_PARTY_NOTICES.txt` for scope and license provenance.
 
 
 ## Stage 9 — JVM startup self-test
