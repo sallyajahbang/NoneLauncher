@@ -17,6 +17,7 @@ This change set repairs the source-level mismatches found by comparing the suppl
 7. **Corrected JVM launch configuration.** `JliLaunchSpec` selects the Java-version-specific Caciocavallo toolkit/classpath arguments, adds required Java 17 module exports/opens, merges the bootclasspath, and uses a conservative initial heap size rather than reserving the maximum heap at startup.
 8. **Improved failure reporting and loading order.** The runtime loader fails early with a readable error if GL4ES, JLI/JVM, or required AWT libraries cannot be loaded; optional OpenAL preload failure is logged. Native exit hook initialization and launch exceptions are surfaced instead of silently proceeding.
 9. **Added a regression test** for refusing Java versions without the matching Caciocavallo toolkit and documented the repairs in the project README.
+10. **Fixed CI toolchain mismatch found in the supplied logs.** ByteHook 1.1.2 / ShadowHook 2.0.1 publish AAR metadata requiring `compileSdk` 37, but the project used API 35 and AGP 8.7.3. The project now uses AGP 9.1.1, Gradle 9.3.1, compileSdk 37 and built-in Kotlin; the CI workflow installs Android platform 37 and Build Tools 36.0.0.
 
 ## Validation performed
 
@@ -24,11 +25,11 @@ This change set repairs the source-level mismatches found by comparing the suppl
 - `clang -fsyntax-only` succeeded for `app/src/main/cpp/pojav/awt_bridge.c` against the installed host JDK JNI headers.
 - `javac` succeeded for `app/src/main/java/net/kdt/pojavlaunch/AWTInputBridge.java`.
 - A script checked all 21 CMake references to Pojav C/C++ sources and all seven Caciocavallo payload files; none were missing.
-- A full `:app:assembleDebug` / unit-test run could not be completed in this environment. The Gradle wrapper needs to download Gradle 8.9 from `services.gradle.org`, but name resolution failed (`UnknownHostException`); Android SDK/NDK artifacts are not installed in this workspace.
+- The supplied CI log shows the unit-test task failed before tests ran, at `:app:checkDebugAarMetadata`, because ByteHook 1.1.2 and ShadowHook 2.0.1 require compileSdk 37 while the project used 35. The toolchain/configuration mismatch has been corrected in this source package. A fresh CI run is still needed to validate the upgraded AGP / Gradle combination; this workspace cannot resolve `services.gradle.org` and does not contain the Android SDK/NDK needed for a full build.
 
 ## Remaining verification required
 
-These repairs target known structural/runtime incompatibilities, but they are not proof that every crash is fixed. Run `:app:testDebugUnitTest` and `:app:assembleDebug` in Android CI with SDK platform 35, NDK 26.3.11579264, and CMake 3.22.1, then install the resulting APK on a real Android device. Test a Java 8 game and a Java 17 game, including AWT/Swing initialization, renderer creation, clipboard/input, exit, and relaunch behavior. If it still crashes, capture `adb logcat -c` before launch and save `adb logcat -d` along with `files/minecraft/logs/latest.log`; the actual crash stack is needed to identify any remaining device-specific issue.
+These repairs target known structural/runtime incompatibilities, but they are not proof that every crash is fixed. Run `:app:testDebugUnitTest` and `:app:assembleDebug` in Android CI with SDK platform 37, Build Tools 36.0.0, NDK 26.3.11579264, and CMake 3.22.1, then install the resulting APK on a real Android device. The CI toolchain uses AGP 9.1.1 and Gradle 9.3.1. Test a Java 8 game and a Java 17 game, including AWT/Swing initialization, renderer creation, clipboard/input, exit, and relaunch behavior. If it still crashes, capture `adb logcat -c` before launch and save `adb logcat -d` along with `files/minecraft/logs/latest.log`; the actual crash stack is needed to identify any remaining device-specific issue.
 
 ## Source provenance
 

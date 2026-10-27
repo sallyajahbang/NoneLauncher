@@ -12,7 +12,7 @@ See [Stage 16 launch adapter notes](docs/STAGE16_JLI_LAUNCH_ADAPTER.md) and [Sta
 
 ## GitHub Actions build
 
-The workflow targets JDK 17, Android SDK platform 35, Build Tools 35.0.0, NDK 26.3.11579264, and CMake 3.22.1. It runs `:app:testDebugUnitTest`, builds the debug APK, and uploads `sally-launcher-debug-apk` as an Actions artifact.
+The workflow targets JDK 17, Android SDK platform 37, Build Tools 36.0.0, NDK 26.3.11579264, CMake 3.22.1, Android Gradle Plugin 9.1.1, and Gradle 9.3.1. AGP 9 built-in Kotlin is used instead of the separate Kotlin Android plugin. It runs `:app:testDebugUnitTest`, builds the debug APK, and uploads `sally-launcher-debug-apk` as an Actions artifact.
 
 Run locally with:
 
@@ -34,4 +34,4 @@ APK path: `app/build/outputs/apk/debug/app-debug.apk`.
 
 The current source includes a more complete Pojav-compatible runtime payload: Java 8 and Java 17 Caciocavallo assets, native AWT/GLFW bridges, exit hooks, and stricter launch-time compatibility checks. The runtime installer refuses Java versions that do not match the bundled AWT toolkit and checks the patched GLFW classes by SHA-256 before launch. The CMake port also mirrors the arm64 Adreno compile definition from upstream Pojav's `Android.mk`.
 
-These are source-level repairs, not a verified release APK. This workspace could not download Gradle 8.9 from `services.gradle.org` and does not contain the Android SDK/NDK needed for a full Android build. CMake configure, the host-side `awt_bridge.c` syntax check, and compilation of `AWTInputBridge.java` passed. Before distributing the launcher, run the project CI build and test on Android hardware; a real crash root cause can only be confirmed against the device's `logcat` and `latest.log`. See `docs/FIXES_CRASH_ANALYSIS.md`.
+These are source-level repairs, not a verified release APK. The initial CI log failed AAR metadata validation because ByteHook 1.1.2 / ShadowHook 2.0.1 require compileSdk 37. The build toolchain has now been upgraded to AGP 9.1.1 / Gradle 9.3.1 and the CI workflow installs Android SDK 37. This workspace could not download Gradle from `services.gradle.org` and does not contain the Android SDK/NDK needed for a full Android build. CMake configure, the host-side `awt_bridge.c` syntax check, and compilation of `AWTInputBridge.java` passed. Before distributing the launcher, run the project CI build and test on Android hardware; a real crash root cause can only be confirmed against the device's `logcat` and `latest.log`. See `docs/FIXES_CRASH_ANALYSIS.md`.
