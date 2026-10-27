@@ -1,6 +1,7 @@
 package com.sally.launcher.core.engine
 
 import java.io.File
+import java.security.MessageDigest
 
 /** A single engine prerequisite and the reason it blocks a real game launch. */
 data class EngineRequirement(
@@ -21,6 +22,10 @@ object EngineCompatibilityInspector {
     private val requiredRuntimeLibraries = listOf("libjli.so", "libjvm.so")
     private val requiredEngineLibraries = listOf(
         "libpojavexec.so",
+        "libexithook.so",
+        "libbytehook.so",
+        "libpojavexec_awt.so",
+        "libawt_xawt.so",
         "liblwjgl.so",
         "liblwjgl_opengl.so",
         "liblwjgl_stb.so",
@@ -80,14 +85,51 @@ object EngineCompatibilityInspector {
             )
         }
 
-        val patchedGlfwJar = File(minecraftRoot, "engine/pojav/lwjgl-glfw-classes.jar")
+        val javaMajor = parseJavaMajor(releaseValue(releaseText, "JAVA_VERSION"))
+        if (javaMajor == 8 || javaMajor == 17) {
+            val component = if (javaMajor == 8) "caciocavallo" else "caciocavallo17"
+            val componentDir = File(minecraftRoot, component)
+            val requiredJars = if (javaMajor == 8) {
+                listOf("cacio-androidnw-1.10-SNAPSHOT.jar", "cacio-shared-1.10-SNAPSHOT.jar", "ResConfHack.jar")
+            } else {
+                listOf("cacio-tta-1.18-SNAPSHOT.jar", "cacio-shared-1.18-SNAPSHOT.jar")
+            }
+            val complete = File(componentDir, "version").isFile &&
+                requiredJars.all { File(componentDir, it).let { jar -> jar.isFile && jar.length() > 0L } }
+            checks += EngineRequirement(
+                id = "runtime-$component",
+                ready = complete,
+                detail = if (complete) {
+                    "Java $javaMajor AWT toolkit component $component is installed."
+                } else {
+                    "Java $javaMajor AWT toolkit component $component is incomplete at ${componentDir.absolutePath}. Reinstall engine runtime components."
+                },
+            )
+        } else if (javaMajor != null) {
+            checks += EngineRequirement(
+                id = "runtime-java-awt-version",
+                ready = false,
+                detail = "This engine bundles Caciocavallo AWT support for Java 8 and 17 only; Java $javaMajor cannot be launched safely yet.",
+            )
+        } else {
+            checks += EngineRequirement(
+                id = "runtime-java-version",
+                ready = false,
+                detail = "Cannot determine the Java major version from ${releaseFile.absolutePath}; AWT toolkit compatibility cannot be checked.",
+            )
+        }
+
+        val patchedGlfwJar = File(minecraftRoot, "engine/pojav/${PojavEnginePayloadInstaller.GLFW_CLASSES_NAME}")
+        val patchedGlfwValid = patchedGlfwJar.isFile && runCatching {
+            sha256(patchedGlfwJar) == PojavEnginePayloadInstaller.GLFW_CLASSES_SHA256
+        }.getOrDefault(false)
         checks += EngineRequirement(
             id = "patched-glfw-classes",
-            ready = patchedGlfwJar.isFile && patchedGlfwJar.length() > 0L,
-            detail = if (patchedGlfwJar.isFile && patchedGlfwJar.length() > 0L) {
-                "Patched Android GLFW classes are installed."
+            ready = patchedGlfwValid,
+            detail = if (patchedGlfwValid) {
+                "Patched Android GLFW classes passed SHA-256 validation."
             } else {
-                "Pojav-compatible patched GLFW classes are missing at ${patchedGlfwJar.absolutePath}."
+                "Pojav-compatible GLFW classes are missing or corrupted at ${patchedGlfwJar.absolutePath}; reinstall the engine payload."
             },
         )
         return Report(checks)
@@ -102,12 +144,31 @@ object EngineCompatibilityInspector {
         else -> null
     }
 
+    private fun parseJavaMajor(raw: String): Int? {
+        val value = raw.trim()
+        if (value.startsWith("1.")) return value.removePrefix("1.").takeWhile { it.isDigit() }.toIntOrNull()
+        return value.takeWhile { it.isDigit() }.toIntOrNull()
+    }
+
     private fun releaseValue(text: String, key: String): String =
         text.lineSequence().firstOrNull { it.startsWith("$key=") }
             ?.substringAfter('=')
             ?.trim()
             ?.removeSurrounding("\"")
             .orEmpty()
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
 
     private fun findFileBounded(root: File, filename: String): File? {
         if (!root.isDirectory) return null

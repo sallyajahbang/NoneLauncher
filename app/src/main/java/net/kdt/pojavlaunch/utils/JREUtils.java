@@ -14,4 +14,8 @@ public final class JREUtils {
     public static native boolean dlopen(String libPath);
     /** Registers the Android-side receiver used by Pojav's fatal JVM/signal path. */
     public static native void setupExitMethod(Context context);
+    /** Installs the exit/atexit hooks used to report non-zero JVM termination to Android. */
+    public static native void initializeHooks();
+    /** Copies the Caciocavallo framebuffer to Android when an AWT UI is used. */
+    public static native int[] renderAWTScreenFrame();
 }

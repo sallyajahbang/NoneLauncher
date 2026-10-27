@@ -53,8 +53,9 @@ class PojavJliLaunchExecutor(context: Context) {
         val payload = PojavEnginePayloadInstaller(appContext).inspect(minecraftRoot)
         if (!payload.ready) {
             throw IOException(
-                "The Android Pojav payload is incomplete. Missing: ${payload.missingNativeLibraries.joinToString()}. " +
-                    "Reinstall the application package before trying again."
+                "The Android Pojav payload is incomplete. Missing native libraries: ${payload.missingNativeLibraries.joinToString().ifBlank { "none" }}; " +
+                    "missing runtime components: ${payload.missingComponents.joinToString().ifBlank { "none" }}. " +
+                    "Reinstall the application package or repair the Minecraft runtime components before trying again."
             )
         }
         if (!spec.workingDirectory.isDirectory) {
@@ -85,8 +86,9 @@ class PojavJliLaunchExecutor(context: Context) {
         // callback first so that failure path does not dereference an unset JavaVM/method ID.
         try {
             JREUtils.setupExitMethod(appContext)
+            JREUtils.initializeHooks()
         } catch (error: Throwable) {
-            throw IOException("Could not initialize the native JVM exit callback: ${error.message ?: error.javaClass.simpleName}", error)
+            throw IOException("Could not initialize the native JVM exit/termination hooks: ${error.message ?: error.javaClass.simpleName}", error)
         }
 
         // Upstream Pojav (JREUtils.launchJavaVM) dlopen()s the renderer and the JRE's native

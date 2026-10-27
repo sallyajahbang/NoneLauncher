@@ -18,20 +18,32 @@ object PojavEngineBootstrap {
         val installer = PojavEnginePayloadInstaller(appContext)
         return try {
             CallbackBridge.installContext(appContext)
+            val runtimeComponents = installer.installCaciocavalloComponents(minecraftRoot)
             val classesJar = installer.installPatchedGlfwClasses(minecraftRoot)
+            AwtBridgeHost.install(appContext)
             System.loadLibrary("pojavexec")
+            System.loadLibrary("exithook")
+            System.loadLibrary("pojavexec_awt")
             CallbackBridge.initializeNativeBuffers()
             val report = installer.inspect(minecraftRoot)
             if (!report.ready) {
                 Result(
                     ready = false,
-                    details = "Patched GLFW classes installed at ${classesJar.absolutePath}, but required engine libraries are missing: ${report.missingNativeLibraries.joinToString()}.",
+                    details = buildString {
+                        append("Patched GLFW classes installed at ${classesJar.absolutePath}. ")
+                        if (report.missingNativeLibraries.isNotEmpty()) {
+                            append("Missing native libraries: ${report.missingNativeLibraries.joinToString()}. ")
+                        }
+                        if (report.missingComponents.isNotEmpty()) {
+                            append("Missing runtime components: ${report.missingComponents.joinToString()}. ")
+                        }
+                    }.trim(),
                     payload = report,
                 )
             } else {
                 Result(
                     ready = true,
-                    details = "Pojav native bridge loaded; patched GLFW classes and matching Android engine libraries are present.",
+                    details = "Pojav JNI and AWT bridges loaded; patched GLFW classes and ${runtimeComponents.size} Caciocavallo runtime components are installed.",
                     payload = report,
                 )
             }

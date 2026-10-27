@@ -88,7 +88,7 @@ class JliLaunchSpecBuilder(context: Context) {
         if (vmArguments.none { it.startsWith("-Duser.home=") }) {
             vmArguments += "-Duser.home=${appContext.filesDir.canonicalPath}"
         }
-        addPojavRuntimeArguments(vmArguments, appNativeDir)
+        addPojavRuntimeArguments(vmArguments, appNativeDir, runtimeHome, minecraftRoot)
         ensureClasspath(vmArguments, profile.classpath)
 
         val argv = buildList {
@@ -163,7 +163,12 @@ class JliLaunchSpecBuilder(context: Context) {
      * Mirrors the default JVM arguments of upstream Pojav (JREUtils.getJavaArgs/launchJavaVM).
      * Anything already set by the Mojang version JSON is left untouched.
      */
-    private fun addPojavRuntimeArguments(args: MutableList<String>, appNativeDir: File?) {
+    private fun addPojavRuntimeArguments(
+        args: MutableList<String>,
+        appNativeDir: File?,
+        runtimeHome: File,
+        minecraftRoot: File,
+    ) {
         fun hasProperty(name: String) = args.any { it == name || it.startsWith("$name=") }
         fun addDefault(name: String, value: String) {
             if (!hasProperty(name)) args += "$name=$value"
@@ -186,6 +191,7 @@ class JliLaunchSpecBuilder(context: Context) {
         addDefault("-Dloader.disable_forked_guis", "true")
         // POSIX_SPAWN needs jspawnhelper, which does not work on Android.
         addDefault("-Djdk.lang.Process.launchMechanism", "FORK")
+        addCaciocavalloArguments(args, runtimeHome, minecraftRoot, width, height)
         if (appNativeDir != null) {
             if (File(appNativeDir, PojavRuntimeLoader.GL4ES_LIBRARY).isFile) {
                 addDefault("-Dorg.lwjgl.opengl.libname", PojavRuntimeLoader.GL4ES_LIBRARY)
@@ -205,7 +211,101 @@ class JliLaunchSpecBuilder(context: Context) {
             (info.totalMem / (1024L * 1024L) * 35L / 100L).coerceIn(512L, 3072L)
         }.getOrDefault(1024L)
         if (args.none { it.startsWith("-Xmx") }) args += "-Xmx${heapMb}M"
-        if (args.none { it.startsWith("-Xms") }) args += "-Xms${heapMb}M"
+        // A large Xms equal to Xmx unnecessarily reserves a large initial heap on Android.
+        // Keep the initial heap modest and let HotSpot grow toward the calculated maximum.
+        if (args.none { it.startsWith("-Xms") }) args += "-Xms${minOf(512L, heapMb)}M"
+    }
+
+    /** Adds Pojav's version-matched AWT toolkit configuration and bootclasspath. */
+    private fun addCaciocavalloArguments(
+        args: MutableList<String>,
+        runtimeHome: File,
+        minecraftRoot: File,
+        width: Int,
+        height: Int,
+    ) {
+        val releaseText = runCatching { File(runtimeHome, "release").readText() }.getOrDefault("")
+        val versionText = releaseText.lineSequence()
+            .firstOrNull { it.startsWith("JAVA_VERSION=") }
+            ?.substringAfter('=')?.trim()?.removeSurrounding("\"")
+            .orEmpty()
+        val javaMajor = when {
+            versionText.startsWith("1.") -> versionText.removePrefix("1.").substringBefore('.').toIntOrNull()
+            else -> versionText.takeWhile { it.isDigit() }.toIntOrNull()
+        } ?: throw IOException("Cannot determine Java runtime version from ${File(runtimeHome, "release").absolutePath}.")
+
+        if (javaMajor != 8 && javaMajor != 17) {
+            throw IOException(
+                "The bundled Android AWT toolkit supports Java 8 and 17 only; Java $javaMajor is not supported by this engine build."
+            )
+        }
+        val cacioDirectoryName = if (javaMajor == 8) "caciocavallo" else "caciocavallo17"
+        val cacioDirectory = File(minecraftRoot, cacioDirectoryName).canonicalFile
+        val root = minecraftRoot.canonicalFile
+        if (!cacioDirectory.path.startsWith(root.path + File.separator)) {
+            throw IOException("Caciocavallo runtime directory escaped the Minecraft data directory.")
+        }
+        val cacioJars = cacioDirectory.listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(".jar") && it.length() > 0L }
+            .sortedBy { it.name }
+        val expectedCount = if (javaMajor == 8) 3 else 2
+        if (cacioJars.size < expectedCount) {
+            // CompatibilityInspector reports the actionable blocker; never silently build an
+            // AWT bootclasspath containing a partial component.
+            return
+        }
+
+        fun addDefault(name: String, value: String) {
+            if (args.none { it == name || it.startsWith("$name=") }) args += "$name=$value"
+        }
+        addDefault("-Djava.awt.headless", "false")
+        addDefault("-Dcacio.managed.screensize", "${width}x${height}")
+        addDefault("-Dcacio.font.fontmanager", "sun.awt.X11FontManager")
+        addDefault("-Dcacio.font.fontscaler", "sun.font.FreetypeFontScaler")
+        addDefault("-Dswing.defaultlaf", "javax.swing.plaf.metal.MetalLookAndFeel")
+
+        if (javaMajor == 8) {
+            addDefault("-Dawt.toolkit", "net.java.openjdk.cacio.ctc.CTCToolkit")
+            addDefault("-Djava.awt.graphicsenv", "net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment")
+        } else {
+            addDefault("-Dawt.toolkit", "com.github.caciocavallosilano.cacio.ctc.CTCToolkit")
+            addDefault("-Djava.awt.graphicsenv", "com.github.caciocavallosilano.cacio.ctc.CTCGraphicsEnvironment")
+            addDefault("-Djava.system.class.loader", "com.github.caciocavallosilano.cacio.ctc.CTCPreloadClassLoader")
+
+            val moduleArguments = listOf(
+                "--add-exports=java.desktop/java.awt=ALL-UNNAMED",
+                "--add-exports=java.desktop/java.awt.peer=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED",
+                "--add-exports=java.desktop/java.awt.dnd.peer=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.awt=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.awt.event=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.awt.datatransfer=ALL-UNNAMED",
+                "--add-exports=java.desktop/sun.font=ALL-UNNAMED",
+                "--add-exports=java.base/sun.security.action=ALL-UNNAMED",
+                "--add-opens=java.base/java.util=ALL-UNNAMED",
+                "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+                "--add-opens=java.desktop/sun.font=ALL-UNNAMED",
+                "--add-opens=java.desktop/sun.java2d=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+                "--add-opens=java.base/java.net=ALL-UNNAMED",
+            )
+            for (argument in moduleArguments) if (argument !in args) args += argument
+        }
+
+        val bootOption = if (javaMajor == 8) "-Xbootclasspath/p:" else "-Xbootclasspath/a:"
+        val existingIndex = args.indexOfFirst { it.startsWith(bootOption) }
+        val cacioClasspath = cacioJars.joinToString(File.pathSeparator) { it.absolutePath }
+        if (existingIndex >= 0) {
+            val existing = args[existingIndex].substringAfter(':')
+            val merged = LinkedHashSet<String>().apply {
+                if (existing.isNotBlank()) addAll(existing.split(File.pathSeparator).filter { it.isNotBlank() })
+                addAll(cacioJars.map { it.absolutePath })
+            }
+            args[existingIndex] = bootOption + merged.joinToString(File.pathSeparator)
+        } else {
+            args += bootOption + cacioClasspath
+        }
     }
 
     private fun ensureClasspath(arguments: MutableList<String>, classpath: String) {

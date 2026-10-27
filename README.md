@@ -29,3 +29,9 @@ APK path: `app/build/outputs/apk/debug/app-debug.apk`.
 - **Stage 15:** Added the Pojav-derived native bridge source, patched GLFW classes JAR, and ABI-specific LWJGL/GL4ES/OpenAL libraries. The bridge and surface need Android CI/device verification.
 - **Stage 14:** Replaced the retired legacy SDK `tools` package request with explicit supported SDK package IDs and added engine compatibility checks.
 - **Stages 1–13:** Added the app skeleton, version/runtime installers, launch metadata builder, JLI smoke probe, graphics/input diagnostics and input callback routing.
+
+## Engine crash repairs (2026-10)
+
+The current source includes a more complete Pojav-compatible runtime payload: Java 8 and Java 17 Caciocavallo assets, native AWT/GLFW bridges, exit hooks, and stricter launch-time compatibility checks. The runtime installer refuses Java versions that do not match the bundled AWT toolkit and checks the patched GLFW classes by SHA-256 before launch. The CMake port also mirrors the arm64 Adreno compile definition from upstream Pojav's `Android.mk`.
+
+These are source-level repairs, not a verified release APK. This workspace could not download Gradle 8.9 from `services.gradle.org` and does not contain the Android SDK/NDK needed for a full Android build. CMake configure, the host-side `awt_bridge.c` syntax check, and compilation of `AWTInputBridge.java` passed. Before distributing the launcher, run the project CI build and test on Android hardware; a real crash root cause can only be confirmed against the device's `logcat` and `latest.log`. See `docs/FIXES_CRASH_ANALYSIS.md`.

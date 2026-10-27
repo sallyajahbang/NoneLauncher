@@ -49,10 +49,15 @@ android {
         }
     }
 
+    buildFeatures {
+        prefab true
+    }
+
     packagingOptions {
         jniLibs {
             // Ensure System.loadLibrary and the runtime linker can find the bundled engine libraries.
             useLegacyPackaging true
+            pickFirsts += ['**/libbytehook.so', '**/libshadowhook.so']
         }
     }
 }
@@ -63,8 +68,13 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'org.apache.commons:commons-compress:1.28.0'
     implementation 'org.tukaani:xz:1.10'
+    // Keep native exit-hook behavior aligned with Pojav on current Android releases.
+    implementation 'com.bytedance:bytehook:1.1.2'
 
     testImplementation 'junit:junit:4.13.2'
     // Use the real JSON implementation in local JVM tests instead of Android's stub android.jar classes.
     testImplementation 'org.json:json:20240303'
 }
+
+// ByteHook 1.1.x requires this upstream workaround for its x86/x86_64 Prefab metadata.
+apply from: rootProject.file('gradle/prefab_bypass.gradle')

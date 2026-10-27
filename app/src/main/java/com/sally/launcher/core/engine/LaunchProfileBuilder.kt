@@ -89,7 +89,13 @@ class LaunchProfileBuilder(context: Context) {
         val runtime = runtimeManager.installedRuntimes()
             .filter { it.majorVersion >= requiredJava }
             .minByOrNull { it.majorVersion }
-            ?: throw IOException("No compatible Java runtime is installed. Install Java $requiredJava or newer first.")
+            ?: throw IOException(
+                if (requiredJava > 17) {
+                    "Minecraft ${version.id} requires Java $requiredJava, but this build's Android AWT toolkit supports Java 8 and 17 only."
+                } else {
+                    "No compatible Java runtime is installed. Install Java $requiredJava or newer first."
+                }
+            )
 
         val mainClass = metadata.optString("mainClass").takeIf { it.isNotBlank() }
             ?: throw IOException("Version metadata does not declare a mainClass")

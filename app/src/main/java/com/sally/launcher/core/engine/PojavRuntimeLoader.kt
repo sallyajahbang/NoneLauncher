@@ -3,6 +3,7 @@ package com.sally.launcher.core.engine
 import android.util.Log
 import net.kdt.pojavlaunch.utils.JREUtils
 import java.io.File
+import java.io.IOException
 
 /**
  * Port of upstream Pojav's JREUtils.loadGraphicsLibrary() + initJavaRuntime(): map the renderer and the
@@ -14,7 +15,8 @@ object PojavRuntimeLoader {
     const val GL4ES_LIBRARY = "libgl4es_114.so"
 
     // libjsig must never be loaded globally into an Android process: it hijacks ART's signal handlers.
-    private val SKIPPED = setOf("libjsig.so")
+    // Always use the APK's xawt compatibility shim instead of any host-JDK implementation.
+    private val SKIPPED = setOf("libjsig.so", "libawt_xawt.so")
 
     fun preload(runtimeHome: File, nativeLibraryDir: String?, ldLibraryPath: String) {
         val searchDirs = ldLibraryPath.split(File.pathSeparator).filter { it.isNotBlank() }.map(::File)
@@ -31,14 +33,21 @@ object PojavRuntimeLoader {
             return fallbackDir != null && dlopen("$fallbackDir/$name")
         }
 
-        // 1. Renderer (GL4ES), as loadGraphicsLibrary() does first.
-        if (!load(GL4ES_LIBRARY, nativeLibraryDir)) Log.e(TAG, "Failed to load renderer $GL4ES_LIBRARY")
+        // 1. Renderer (GL4ES), as loadGraphicsLibrary() does first. Continuing without it
+        // typically produces a much less useful JVM crash later when GLFW creates its context.
+        if (!load(GL4ES_LIBRARY, nativeLibraryDir)) {
+            throw IOException("Could not load the Android renderer $GL4ES_LIBRARY from ${nativeLibraryDir ?: "the runtime search path"}.")
+        }
 
         // 2. JVM + launcher libraries.
         val libDir = File(runtimeHome, "lib")
-        val jvmDir = File(libDir, "server").takeIf { File(it, "libjvm.so").isFile } ?: File(libDir, "client")
-        load("libjli.so")
-        load("libjvm.so", jvmDir.absolutePath)
+        val jvmDir = File(libDir, "server").takeIf { File(it, "libjvm.so").isFile }
+            ?: File(libDir, "client").takeIf { File(it, "libjvm.so").isFile }
+            ?: libDir
+        if (!load("libjli.so")) throw IOException("Could not load libjli.so from the selected Java runtime.")
+        if (!load("libjvm.so", jvmDir.absolutePath)) {
+            throw IOException("Could not load libjvm.so from ${jvmDir.absolutePath}.")
+        }
         for (name in listOf(
             "libverify.so", "libjava.so", "libnet.so", "libnio.so",
             "libawt.so", "libawt_headless.so", "libfreetype.so", "libfontmanager.so",
@@ -47,8 +56,17 @@ object PojavRuntimeLoader {
         // 3. Everything else shipped with the JRE.
         for (library in locateLibraries(libDir)) dlopen(library.absolutePath)
 
-        // 4. OpenAL from the APK.
-        if (nativeLibraryDir != null) dlopen("$nativeLibraryDir/libopenal.so")
+        // 4. Pojav's AWT JNI bridge and the X11-free xawt compatibility shim from the APK.
+        if (nativeLibraryDir != null) {
+            for (name in listOf("libpojavexec_awt.so", "libawt_xawt.so")) {
+                if (!dlopen("$nativeLibraryDir/$name")) {
+                    throw IOException("Could not load required AWT compatibility library $name from $nativeLibraryDir.")
+                }
+            }
+            if (!dlopen("$nativeLibraryDir/libopenal.so")) {
+                Log.w(TAG, "OpenAL could not be preloaded; games using audio may fail when sound initializes.")
+            }
+        }
     }
 
     private fun locateLibraries(root: File): List<File> {

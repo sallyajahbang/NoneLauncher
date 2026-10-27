@@ -55,7 +55,8 @@ class RuntimeManager(context: Context) {
         val architecture = currentRuntimeArchitecture()
         val chosenMajor = supportedJavaMajors(architecture).firstOrNull { it >= requiredMajor }
             ?: throw IOException(
-                "Minecraft ${version.id} requires Java $requiredMajor, but no supported runtime is published for Android $architecture."
+                "Minecraft ${version.id} requires Java $requiredMajor, but this launcher build only supports Java 8 and 17 " +
+                    "with its current Caciocavallo/AWT toolkit on Android $architecture."
             )
         if (chosenMajor != requiredMajor) {
             onProgress("Minecraft requires Java $requiredMajor; using compatible Java $chosenMajor…")
@@ -338,10 +339,94 @@ class RuntimeManager(context: Context) {
             ?: return null
         val normalized = normalizeRuntimeArch(osArch) ?: return null
         if (normalized != currentRuntimeArchitecture()) return null
+        if (parsedMajor !in supportedJavaMajors(normalized)) return null
         if (!containsLibJvm(File(home, "lib"), 0)) return null
         // Preserve the executable bit if archive tooling did not do so.
         if (!javaBinary.canExecute()) javaBinary.setExecutable(true, true)
+        // A broken compatibility overlay makes the runtime unlaunchable, but must not crash the
+        // Installed Runtimes screen while it enumerates candidates.
+        if (runCatching { prepareRuntimeCompatibility(home) }.isFailure) return null
         return RuntimeInfo(parsedMajor, normalized, home)
+    }
+
+    /**
+     * Mirrors the runtime-specific post-install preparation performed by upstream Pojav.
+     * Some Java distributions publish FreeType only as libfreetype.so.6, while LWJGL expects
+     * libfreetype.so; desktop JREs may also ship an X11 AWT library that must be replaced with
+     * Pojav's Android shim. These files are prepared before the runtime is reported as usable.
+     */
+    private fun prepareRuntimeCompatibility(home: File) {
+        val canonicalHome = home.canonicalFile
+        val rootPath = canonicalHome.path
+        val libRoot = File(canonicalHome, "lib")
+        val jvmFile = findLibraryFile(libRoot, "libjvm.so", 0)
+            ?: throw IOException("Runtime has no libjvm.so under ${libRoot.absolutePath}")
+        val jvmDirectory = jvmFile.parentFile
+            ?: throw IOException("Cannot resolve the JVM library directory")
+        val jvmBaseDirectory = if (jvmDirectory.name == "server" || jvmDirectory.name == "client") {
+            jvmDirectory.parentFile ?: jvmDirectory
+        } else {
+            jvmDirectory
+        }
+        val targetLibraryDirectory = jvmBaseDirectory.canonicalFile
+        ensureInsideRoot(rootPath, targetLibraryDirectory.path)
+        val freetypeVersioned = findLibraryFile(targetLibraryDirectory, "libfreetype.so.6", 0)
+            ?: findLibraryFile(libRoot, "libfreetype.so.6", 0)
+
+        if (freetypeVersioned != null) {
+            val unversioned = File(targetLibraryDirectory, "libfreetype.so")
+            val needsCopy = !unversioned.isFile ||
+                unversioned.length() != freetypeVersioned.length() ||
+                runCatching { sha256(unversioned) != sha256(freetypeVersioned) }.getOrDefault(true)
+            if (needsCopy && freetypeVersioned.canonicalFile != unversioned.canonicalFile) {
+                copyAtomically(freetypeVersioned, unversioned, "FreeType compatibility library")
+            }
+        }
+
+        val appNativeDirectory = File(appContext.applicationInfo.nativeLibraryDir)
+        val awtShim = File(appNativeDirectory, "libawt_xawt.so")
+        if (awtShim.isFile && awtShim.length() > 0L) {
+            val runtimeAwt = File(targetLibraryDirectory, awtShim.name)
+            val needsCopy = !runtimeAwt.isFile ||
+                runtimeAwt.length() != awtShim.length() ||
+                runCatching { sha256(runtimeAwt) != sha256(awtShim) }.getOrDefault(true)
+            if (needsCopy) copyAtomically(awtShim, runtimeAwt, "Android AWT compatibility library")
+        }
+    }
+
+    private fun findLibraryFile(directory: File, name: String, depth: Int): File? {
+        if (!directory.isDirectory || depth > 8) return null
+        val canonicalRoot = runCatching { directory.canonicalFile }.getOrNull() ?: return null
+        val children = canonicalRoot.listFiles().orEmpty().sortedBy { it.name }
+        children.firstOrNull { it.isFile && it.name == name }?.let { return it }
+        for (child in children) {
+            if (!child.isDirectory) continue
+            findLibraryFile(child, name, depth + 1)?.let { return it }
+        }
+        return null
+    }
+
+    private fun copyAtomically(source: File, destination: File, label: String) {
+        val parent = destination.parentFile ?: throw IOException("Cannot resolve destination for $label")
+        if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
+            throw IOException("Cannot create ${parent.absolutePath} for $label")
+        }
+        val temporary = File(parent, ".${destination.name}.tmp")
+        try {
+            source.inputStream().buffered().use { input ->
+                temporary.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            if (temporary.length() != source.length() || temporary.length() == 0L) {
+                throw IOException("Copied $label failed size validation")
+            }
+            if (destination.exists() && !destination.delete()) throw IOException("Cannot replace existing $label")
+            if (!temporary.renameTo(destination)) {
+                temporary.copyTo(destination, overwrite = true)
+                if (!temporary.delete()) temporary.deleteOnExit()
+            }
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
     }
 
     private fun containsLibJvm(directory: File, depth: Int): Boolean {
@@ -377,9 +462,9 @@ class RuntimeManager(context: Context) {
     }
 
     private fun supportedJavaMajors(architecture: String): List<Int> = when (architecture) {
-        "arm", "arm64" -> listOf(8, 17, 21, 25)
-        // The current upstream runtime release does not publish Java 25 for x86/x86_64.
-        "x86", "x86_64" -> listOf(8, 17, 21)
+        // The bundled upstream Caciocavallo AWT toolkit supports Java 8 and 17 only.
+        // Newer JVMs must not be offered until a compatible toolkit/native bridge is bundled.
+        "arm", "arm64", "x86", "x86_64" -> listOf(8, 17)
         else -> emptyList()
     }
 

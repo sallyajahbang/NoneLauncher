@@ -49,6 +49,37 @@ class EngineCompatibilityInspectorTest {
     }
 
     @Test
+    fun blocksJavaVersionsWithoutMatchingCaciocavalloToolkit() {
+        val root = createTempDir(prefix = "sally-engine-awt-version-")
+        try {
+            val runtime = File(root, "runtime").apply { mkdirs() }
+            File(runtime, "release").writeText("OS_ARCH=\"aarch64\"\nJAVA_VERSION=\"21\"\n")
+            File(runtime, "bin").mkdirs()
+            File(runtime, "bin/java").writeText("test")
+            File(runtime, "lib/server").mkdirs()
+            File(runtime, "lib/server/libjvm.so").writeText("test")
+            File(runtime, "lib/jli").mkdirs()
+            File(runtime, "lib/jli/libjli.so").writeText("test")
+            val minecraft = File(root, "minecraft").apply { mkdirs() }
+            File(minecraft, "caciocavallo17").mkdirs()
+            File(minecraft, "caciocavallo17/version").writeText("1")
+            File(minecraft, "caciocavallo17/cacio-tta-1.18-SNAPSHOT.jar").writeText("test")
+            File(minecraft, "caciocavallo17/cacio-shared-1.18-SNAPSHOT.jar").writeText("test")
+
+            val report = EngineCompatibilityInspector.inspect(
+                runtimeHome = runtime,
+                minecraftRoot = minecraft,
+                appNativeLibraryDir = File(root, "app-native").apply { mkdirs() },
+                deviceArchitecture = "aarch64",
+            )
+
+            assertTrue(report.blockers.any { it.contains("supports Java 8 and 17 only") })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun reportsRuntimeAbiMismatch() {
         val root = createTempDir(prefix = "sally-engine-abi-")
         try {
