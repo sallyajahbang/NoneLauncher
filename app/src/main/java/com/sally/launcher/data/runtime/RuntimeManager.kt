@@ -62,7 +62,7 @@ class RuntimeManager(context: Context) {
         val architecture = currentRuntimeArchitecture()
         val chosenMajor = supportedJavaMajors(architecture).firstOrNull { it >= requiredMajor }
             ?: throw IOException(
-                "Minecraft ${version.id} requires Java $requiredMajor, but this launcher build only supports Java 8 and 17 " +
+                "Minecraft ${version.id} requires Java $requiredMajor, but this launcher build only supports Java ${supportedJavaMajors(architecture).joinToString("/")} " +
                     "with its current Caciocavallo/AWT toolkit on Android $architecture."
             )
         if (chosenMajor != requiredMajor) {
@@ -459,9 +459,11 @@ class RuntimeManager(context: Context) {
     }
 
     private fun supportedJavaMajors(architecture: String): List<Int> = when (architecture) {
-        // The bundled upstream Caciocavallo AWT toolkit supports Java 8 and 17 only.
-        // Newer JVMs must not be offered until a compatible toolkit/native bridge is bundled.
-        "arm", "arm64", "x86", "x86_64" -> listOf(8, 17)
+        // Caciocavallo17 (cacio-tta) is shared by Java 9+ and works on Java 21/25, the same
+        // setup Amethyst uses. Java 21+ is offered on arm/arm64 only, because x86 builds are
+        // not provided for 21+ (matches Amethyst).
+        "arm", "arm64" -> listOf(8, 17, 21, 25)
+        "x86", "x86_64" -> listOf(8, 17)
         else -> emptyList()
     }
 

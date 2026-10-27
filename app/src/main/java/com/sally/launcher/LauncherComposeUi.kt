@@ -23,14 +23,14 @@ import androidx.compose.ui.window.DialogProperties
 import com.sally.launcher.data.model.MinecraftVersion
 
 // design.md §5.2 — NavigationRail items: Home, Versi, Java, Setting. Developer lives inside Setting.
-internal enum class LauncherTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Outlined.PlayArrow),
-    VERSIONS("Versi", Icons.Outlined.Apps),
-    JAVA("Java", Icons.Outlined.Terminal),
-    SETTINGS("Setting", Icons.Outlined.Settings),
+internal enum class LauncherTab(val label: String, val icon: ImageVector, val inNavigation: Boolean) {
+    HOME("Home", Icons.Outlined.PlayArrow, true),
+    VERSIONS("Versi", Icons.Outlined.Apps, true),
+    JAVA("Java", Icons.Outlined.Terminal, false),
+    SETTINGS("Setting", Icons.Outlined.Settings, true),
 }
 
-// design.md §7.3 filter chips: Terinstall, Release, Snapshot, Old, Lainnya.
+// Filters used by the Versi screen.
 internal enum class VersionFilter(val label: String) {
     INSTALLED("Terinstall"), RELEASE("Release"), SNAPSHOT("Snapshot"), OLD("Old"), OTHER("Lainnya")
 }
@@ -119,7 +119,7 @@ internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions)
                     containerColor = MaterialTheme.colorScheme.background,
                     bottomBar = {
                         NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                            LauncherTab.entries.forEach { tab ->
+                            LauncherTab.entries.filter { it.inNavigation }.forEach { tab ->
                                 NavigationBarItem(
                                     selected = state.tab == tab,
                                     onClick = { actions.navigate(tab) },
@@ -180,7 +180,7 @@ private fun SideRail(state: LauncherUiState, actions: LauncherActions) {
             Text("S", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
         }
         Spacer(Modifier.height(8.dp))
-        listOf(LauncherTab.HOME, LauncherTab.VERSIONS, LauncherTab.JAVA).forEach { tab ->
+        listOf(LauncherTab.HOME, LauncherTab.VERSIONS).forEach { tab ->
             RailButton(tab.icon, tab.label, selected = state.tab == tab) { actions.navigate(tab) }
         }
         Spacer(Modifier.weight(1f))
@@ -225,48 +225,131 @@ private fun isWideScreen(): Boolean = LocalConfiguration.current.screenWidthDp >
 private fun activeVersion(state: LauncherUiState): MinecraftVersion? =
     state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
 
-// ---------------------------------------------------------------- Home
+// ---------------------------------------------------------------- Home (main menu, after Amethyst's main layout)
 
 @Composable
 private fun HomeScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
     val active = activeVersion(state)
     val javaReady = state.installedJavaMajors.isNotEmpty()
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatusChip("${state.installedVersions.size} versi terpasang", state.installedVersions.isNotEmpty())
-            StatusChip(if (javaReady) "Java siap" else "Java belum ada", javaReady)
+    val busy = state.busyAction != null
+    val wide = isWideScreen()
+    Row(modifier.fillMaxSize().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        // Left: quick menu, like the menu column in Amethyst.
+        Column(Modifier.width(if (wide) 240.dp else 180.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Sally Launcher", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            QuickMenuItem(Icons.Outlined.AccountCircle, "Akun", state.accountStatus) { onOpenAccount() }
+            QuickMenuItem(Icons.Outlined.Apps, "Versi", "${state.installedVersions.size} terpasang") { actions.navigate(LauncherTab.VERSIONS) }
+            QuickMenuItem(Icons.Outlined.Terminal, "Java", if (javaReady) "Siap" else "Belum ada") { actions.navigate(LauncherTab.JAVA) }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Terinspirasi Amethyst-Android dan PojavLauncher (LGPL-3.0).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        if (isWideScreen()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
-                HeroCard(state, actions, Modifier.weight(2.2f))
-                ProfileCard(state, onOpenAccount, Modifier.weight(1f))
+        // Center: version picker, Play, and status.
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            VersionPicker(state, actions)
+            Spacer(Modifier.height(20.dp))
+            Text(
+                active?.let { "Minecraft ${it.id}" } ?: "Belum ada versi terpasang",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                when {
+                    active == null -> "Buka tab Versi untuk memasang versi."
+                    javaReady -> "Siap dimainkan."
+                    else -> "Java belum terpasang."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = actions.play,
+                enabled = active != null && !busy,
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.fillMaxWidth(if (wide) .6f else 1f).height(72.dp),
+            ) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Main", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-        } else {
-            HeroCard(state, actions, Modifier.fillMaxWidth())
-            ProfileCard(state, onOpenAccount, Modifier.fillMaxWidth())
+            if (busy) {
+                Spacer(Modifier.height(12.dp))
+                Text(state.catalogStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            } else if (active != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!javaReady) TextButton(onClick = actions.installRuntime) { Text("Pasang Java") }
+                    TextButton(onClick = { actions.installVersion(active.id) }) { Text("Perbaiki otomatis") }
+                }
+            }
         }
-        Text("Ringkasan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            LatestReleaseTile(state, actions)
-            InfoTile(
-                icon = Icons.Outlined.Terminal,
-                label = "Java",
-                value = if (javaReady) "Siap" else "Belum ada",
-                body = if (javaReady) "Terpasang: Java ${state.installedJavaMajors.joinToString(", ")}" else "Java dipilih otomatis sesuai versi.",
-                action = "Kelola Java",
-                onAction = { actions.navigate(LauncherTab.JAVA) },
-            )
-            InfoTile(
-                icon = Icons.Outlined.FolderOpen,
-                label = "Versi",
-                value = "${state.installedVersions.size} terpasang",
-                body = "Pasang, pakai, atau perbaiki versi.",
-                action = "Buka Versi",
-                onAction = { actions.navigate(LauncherTab.VERSIONS) },
-            )
+    }
+}
+
+@Composable
+private fun VersionPicker(state: LauncherUiState, actions: LauncherActions) {
+    var open by remember { mutableStateOf(false) }
+    val active = activeVersion(state)
+    Box {
+        OutlinedButton(
+            onClick = { open = true },
+            enabled = state.installedVersions.isNotEmpty() && state.busyAction == null,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text(active?.id ?: "Pilih versi", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(8.dp))
+            Text("▾")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            state.installedVersions.forEach { version ->
+                DropdownMenuItem(
+                    text = { Text(version.id) },
+                    onClick = {
+                        open = false
+                        actions.selectVersion(version.id)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickMenuItem(icon: ImageVector, title: String, subtitle: String?, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
@@ -764,132 +847,134 @@ private fun JavaMappingRow(versions: String, java: String, supported: Boolean) {
 
 // ---------------------------------------------------------------- Setting (design.md §7.7, §7.8)
 
+private enum class SettingsPage { MENU, TAMPILAN, LAINNYA }
+
 @Composable
 private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
+    var page by remember { mutableStateOf(SettingsPage.MENU) }
     var versionTaps by remember { mutableIntStateOf(0) }
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { ScreenHeader("Setting", "Atur launcher tanpa menyentuh diagnostik.", onOpenAccount) }
-
-        item {
-            SettingsSection("Umum", "Tampilan dan perilaku dasar") {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Tema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        ThemeMode.entries.forEachIndexed { index, mode ->
-                            SegmentedButton(
-                                selected = state.themeMode == mode,
-                                onClick = { actions.setThemeMode(mode) },
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = ThemeMode.entries.size),
-                                label = { Text(themeModeLabel(mode)) },
-                            )
-                        }
-                    }
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (page == SettingsPage.MENU) {
+            Text("Setting", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { page = SettingsPage.MENU }) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Kembali")
                 }
-                SettingSwitchRow(
-                    icon = Icons.Outlined.DarkMode,
-                    title = "AMOLED hitam",
-                    subtitle = "Latar hitam pekat saat tema gelap.",
-                    checked = state.amoledBlack,
-                    onCheckedChange = actions.setAmoledBlack,
-                )
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    SettingSwitchRow(
-                        icon = Icons.Outlined.Palette,
-                        title = "Warna dinamis",
-                        subtitle = "Ikuti warna wallpaper (Android 12+). Mati: palet hijau Minecraft.",
-                        checked = state.dynamicColor,
-                        onCheckedChange = actions.setDynamicColor,
-                    )
-                }
-                SettingSwitchRow(
-                    icon = Icons.Outlined.BugReport,
-                    title = "Mode Developer",
-                    subtitle = "Tampilkan opsi diagnostik untuk pengguna tingkat lanjut.",
-                    checked = state.developerMode,
-                    onCheckedChange = actions.requestDeveloperMode,
+                Text(
+                    if (page == SettingsPage.TAMPILAN) "Tampilan" else "Lainnya",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
 
-        item {
-            SettingsSection("Game", "Kenyamanan saat bermain") {
-                SettingSwitchRow(
-                    icon = Icons.Outlined.Gamepad,
-                    title = "Layar tetap menyala",
-                    subtitle = "Cegah layar mati saat launcher terbuka.",
-                    checked = state.keepScreenOn,
-                    onCheckedChange = actions.setKeepScreenOn,
-                )
-            }
-        }
-
-        item {
-            SettingsSection("Java & Runtime", "Kelola runtime Java") {
-                SettingLinkRow(icon = Icons.Outlined.Terminal, title = "Kelola Java", subtitle = "Pasang atau perbaiki runtime Java.") {
-                    actions.navigate(LauncherTab.JAVA)
+        when (page) {
+            SettingsPage.MENU -> {
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingLinkRow(Icons.Outlined.Palette, "Tampilan", "Tema, AMOLED, warna dinamis, layar menyala") { page = SettingsPage.TAMPILAN }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingLinkRow(Icons.Outlined.Terminal, "Java", "Pasang dan perbaiki runtime Java") { actions.navigate(LauncherTab.JAVA) }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingLinkRow(Icons.Outlined.AccountCircle, "Akun", state.accountStatus, onOpenAccount)
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingLinkRow(Icons.Outlined.Info, "Lainnya", "Penyimpanan, mode developer, tentang, kredit") { page = SettingsPage.LAINNYA }
                 }
             }
-        }
 
-        item {
-            SettingsSection("Akun", "Microsoft atau profil lokal") {
-                SettingLinkRow(icon = Icons.Outlined.AccountCircle, title = "Akun", subtitle = state.accountStatus, onClick = onOpenAccount)
-            }
-        }
-
-        item {
-            SettingsSection("Penyimpanan", "Lokasi data game") {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Android/data/com.sally.launcher/files/minecraft", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        "Runtime Java tetap di penyimpanan internal aplikasi karena penyimpanan eksternal bisa dipasang sebagai noexec.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        if (state.developerMode) {
-            item {
-                SettingsSection("Developer", "Hanya tampil saat Mode Developer aktif") {
+            SettingsPage.TAMPILAN -> {
+                SimpleCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(state.engineStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Log: Android/data/com.sally.launcher/files/diagnostics", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    DevOption(Icons.Outlined.Code, "Siapkan profil launch", "Cek metadata versi, classpath, runtime, akun, dan penghalang.", "prepare", state.busyAction, actions.prepareProfile)
-                    DevOption(Icons.Outlined.Terminal, "Probe loader JVM", "Cek libjli dan libjvm. Tidak menjalankan Minecraft.", "probe", state.busyAction, actions.probeJvm)
-                    DevOption(Icons.Outlined.CheckCircle, "Tes runtime Java", "Jalankan proses JLI sekali pakai dengan -version.", "smoke", state.busyAction, actions.testJvm)
-                    DevOption(Icons.Outlined.BugReport, "Tes grafis & input", "Buka permukaan diagnostik GLES dan input.", null, state.busyAction, actions.testGraphics)
-                    DevOption(Icons.Outlined.Extension, "Tes jembatan Pojav", "Buka diagnostik jembatan surface / JNI Pojav.", null, state.busyAction, actions.testPojav)
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        OutlinedButton(onClick = { actions.requestDeveloperMode(false) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Matikan Mode Developer")
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            SettingsSection("Tentang", "Sally Launcher") {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clickable {
-                            versionTaps++
-                            if (versionTaps >= 7) {
-                                versionTaps = 0
-                                actions.requestDeveloperMode(!state.developerMode)
+                        Text("Tema", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            ThemeMode.entries.forEachIndexed { index, mode ->
+                                SegmentedButton(
+                                    selected = state.themeMode == mode,
+                                    onClick = { actions.setThemeMode(mode) },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = ThemeMode.entries.size),
+                                    label = { Text(themeModeLabel(mode)) },
+                                )
                             }
                         }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Column(Modifier.weight(1f)) {
-                        Text("Versi app · 0.1.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("Antarmuka Material 3 dengan mesin native turunan Pojav.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingSwitchRow(Icons.Outlined.DarkMode, "AMOLED hitam", "Latar hitam pekat saat tema gelap.", state.amoledBlack, actions.setAmoledBlack)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        SettingSwitchRow(Icons.Outlined.Palette, "Warna dinamis", "Ikuti warna wallpaper (Android 12+).", state.dynamicColor, actions.setDynamicColor)
+                    }
+                    SettingSwitchRow(Icons.Outlined.Gamepad, "Layar tetap menyala", "Cegah layar mati saat launcher terbuka.", state.keepScreenOn, actions.setKeepScreenOn)
+                }
+            }
+
+            SettingsPage.LAINNYA -> {
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Penyimpanan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("Android/data/com.sally.launcher/files/minecraft", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "Runtime Java tetap di penyimpanan internal aplikasi karena penyimpanan eksternal bisa dipasang sebagai noexec.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    SettingSwitchRow(Icons.Outlined.BugReport, "Mode Developer", "Tampilkan opsi diagnostik untuk pengguna tingkat lanjut.", state.developerMode, actions.requestDeveloperMode)
+                }
+                if (state.developerMode) {
+                    SimpleCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Diagnostik", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(state.engineStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        DevOption(Icons.Outlined.Code, "Siapkan profil launch", "Cek metadata versi, classpath, runtime, akun, dan penghalang.", "prepare", state.busyAction, actions.prepareProfile)
+                        DevOption(Icons.Outlined.Terminal, "Probe loader JVM", "Cek libjli dan libjvm. Tidak menjalankan Minecraft.", "probe", state.busyAction, actions.probeJvm)
+                        DevOption(Icons.Outlined.CheckCircle, "Tes runtime Java", "Jalankan proses JLI sekali pakai dengan -version.", "smoke", state.busyAction, actions.testJvm)
+                        DevOption(Icons.Outlined.BugReport, "Tes grafis & input", "Buka permukaan diagnostik GLES dan input.", null, state.busyAction, actions.testGraphics)
+                        DevOption(Icons.Outlined.Extension, "Tes jembatan Pojav", "Buka diagnostik jembatan surface / JNI Pojav.", null, state.busyAction, actions.testPojav)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            OutlinedButton(onClick = { actions.requestDeveloperMode(false) }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Matikan Mode Developer")
+                            }
+                        }
+                    }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable {
+                                versionTaps++
+                                if (versionTaps >= 7) {
+                                    versionTaps = 0
+                                    actions.requestDeveloperMode(!state.developerMode)
+                                }
+                            }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text("Versi app · 0.1.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Ketuk 7 kali untuk Mode Developer.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                SimpleCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Kredit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Terinspirasi oleh Amethyst-Android (AngelAuraMC) dan PojavLauncher (PojavLauncherTeam). Keduanya berlisensi LGPL-3.0. Tampilan ini didesain ulang dengan Material 3 dan tidak menyalin kode UI dari kedua proyek. Lisensi dan notice engine ada di assets/engine/pojav.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
