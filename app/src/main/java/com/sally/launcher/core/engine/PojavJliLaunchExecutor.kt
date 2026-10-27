@@ -89,6 +89,12 @@ class PojavJliLaunchExecutor(context: Context) {
             throw IOException("Could not initialize the native JVM exit callback: ${error.message ?: error.javaClass.simpleName}", error)
         }
 
+        // libpojavexec's Logger JNI endpoint redirects native/JVM stdout and stderr to a stable
+        // file. Create it first because the native implementation truncates but does not create.
+        val gameLog = MinecraftGameLog.beginCapture(appContext)
+        // Do not print argv/session data: it includes the temporary Minecraft access token.
+        android.util.Log.i("SallyLauncher", "Minecraft stdout/stderr capture is ready at ${gameLog.absolutePath}")
+
         val changeDirectoryResult = try {
             JREUtils.chdir(spec.workingDirectory.canonicalPath)
         } catch (error: Throwable) {

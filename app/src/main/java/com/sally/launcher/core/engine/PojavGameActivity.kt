@@ -8,11 +8,15 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.graphics.Typeface
+import android.content.DialogInterface
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
 import com.sally.launcher.data.model.MinecraftVersion
 import java.io.IOException
@@ -28,6 +32,7 @@ class PojavGameActivity : AppCompatActivity() {
     private lateinit var surfaceView: PojavGameSurfaceView
     private lateinit var statusText: TextView
     private lateinit var closeButton: MaterialButton
+    private lateinit var viewLogButton: MaterialButton
     private var launchStarted = false
     private var launchFinished = false
     private var requestedVersion: MinecraftVersion? = null
@@ -82,6 +87,16 @@ class PojavGameActivity : AppCompatActivity() {
         }
         panel.addView(statusText, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        viewLogButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "View game log"
+            isAllCaps = false
+            contentDescription = "View the latest Minecraft launch log"
+            setOnClickListener { showGameLog() }
+        }
+        panel.addView(viewLogButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
         closeButton = MaterialButton(this).apply {
@@ -168,12 +183,48 @@ class PojavGameActivity : AppCompatActivity() {
                 launchFinished = true
                 closeButton.isEnabled = true
                 result.onSuccess { exitCode ->
-                    statusText.text = "Minecraft Java ${version.id} exited with code $exitCode. Check the game log if it did not reach the title screen."
+                    statusText.text = "Minecraft Java ${version.id} exited with code $exitCode. Open View game log for captured output."
                 }.onFailure { error ->
-                    statusText.text = "Minecraft could not start: ${error.message ?: error.javaClass.simpleName}"
+                    statusText.text = "Minecraft could not start: ${error.message ?: error.javaClass.simpleName}\nOpen View game log for captured output."
                 }
             }
         }
+    }
+
+    private fun showGameLog() {
+        val logText = TextView(this).apply {
+            text = MinecraftGameLog.readTail(this@PojavGameActivity)
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.WHITE)
+            setTextIsSelectable(true)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        val scroll = ScrollView(this).apply {
+            addView(logText, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                minOf(dp(520), (resources.displayMetrics.heightPixels * 0.62f).toInt()).coerceAtLeast(dp(220)),
+            )
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Minecraft log")
+            .setView(scroll)
+            .setNeutralButton("Refresh", null)
+            .setPositiveButton("Close", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    getButton(DialogInterface.BUTTON_NEUTRAL)?.setOnClickListener {
+                        logText.text = MinecraftGameLog.readTail(this@PojavGameActivity)
+                        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                    }
+                }
+                show()
+            }
     }
 
     private fun readVersionFromIntent(): MinecraftVersion? {
