@@ -29,6 +29,7 @@ import com.sally.launcher.core.engine.JliBridgeDiagnostics
 import com.sally.launcher.core.engine.JliRuntimeSmokeService
 import com.sally.launcher.core.engine.JliLaunchSpecBuilder
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
+import com.sally.launcher.core.auth.MicrosoftLoginActivity
 import com.sally.launcher.core.engine.PojavGameActivity
 import com.sally.launcher.data.model.MinecraftVersion
 import com.sally.launcher.data.install.VersionInstaller
@@ -54,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var jvmBridgeButton: MaterialButton
     private lateinit var jvmSmokeButton: MaterialButton
     private lateinit var engineStatusText: TextView
+    private lateinit var accountStatusText: TextView
+    private lateinit var signInButton: MaterialButton
     private var jvmSmokeReceiver: BroadcastReceiver? = null
     private var jvmSmokeTimeout: Runnable? = null
     private lateinit var versions: List<MinecraftVersion>
@@ -65,7 +68,13 @@ class MainActivity : AppCompatActivity() {
         selectedVersionId = getPreferences(MODE_PRIVATE).getString(KEY_SELECTED_VERSION, "").orEmpty()
         setContentView(createContentView())
         updateRuntimeStatus()
+        updateAccountStatus()
         loadVersionCatalog()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::accountStatusText.isInitialized) updateAccountStatus()
     }
 
     override fun onDestroy() {
@@ -168,10 +177,25 @@ class MainActivity : AppCompatActivity() {
         engineContent.addView(textView("NATIVE ENGINE · Pojav / JLI", 19f, bold = true))
         addGap(engineContent, 6)
         engineContent.addView(textView(
-            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Launch is permitted only after the game surface is bound and a valid Microsoft/Minecraft Java session is supplied; authentication is not yet wired to this screen.",
+            "The Pojav-derived Android GLFW/LWJGL bridge and JNI JLI launch adapter are bundled. Sign in with a Microsoft account that owns Minecraft: Java Edition before launching. Device-code authentication uses Microsoft's website and never asks for your password inside Sally.",
             14f,
             color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
         ))
+        addGap(engineContent, 10)
+        accountStatusText = textView(
+            "Checking Microsoft account…",
+            13f,
+            color = color(com.google.android.material.R.attr.colorOnSurfaceVariant),
+        )
+        engineContent.addView(accountStatusText)
+        addGap(engineContent, 8)
+        signInButton = MaterialButton(this).apply {
+            text = "Sign in with Microsoft"
+            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { startActivity(Intent(this@MainActivity, MicrosoftLoginActivity::class.java)) }
+        }
+        engineContent.addView(signInButton)
         addGap(engineContent, 12)
         prepareLaunchButton = MaterialButton(this).apply {
             text = "Prepare launch profile"
@@ -632,11 +656,13 @@ class MainActivity : AppCompatActivity() {
             MaterialAlertDialogBuilder(this)
                 .setTitle("Minecraft account required")
                 .setMessage(
-                    "The native JLI launch path is now implemented, but Sally does not yet have a Microsoft sign-in flow connected. " +
-                        "Launch is intentionally blocked until the Microsoft → Xbox Live → XSTS → Minecraft account chain returns a real Java profile and access token. " +
-                        "The launcher will not use an offline placeholder token as a substitute."
+                    "Sign in with Microsoft and confirm this account owns Minecraft: Java Edition. " +
+                        "Sally verifies the account through Microsoft, Xbox Live, XSTS, and Minecraft Services; it will not use an offline placeholder token."
                 )
-                .setPositiveButton("OK", null)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Sign in") { _, _ ->
+                    startActivity(Intent(this, MicrosoftLoginActivity::class.java))
+                }
                 .show()
             return
         }
@@ -656,6 +682,21 @@ class MainActivity : AppCompatActivity() {
             putExtra(PojavGameActivity.EXTRA_VERSION_URL, selected.url)
             putExtra(PojavGameActivity.EXTRA_RELEASE_TIME, selected.releaseTime)
         })
+    }
+
+    private fun updateAccountStatus() {
+        if (!::accountStatusText.isInitialized) return
+        val session = MinecraftLaunchSessionStore.current()
+        val problem = session?.validationError()
+        if (problem != null) MinecraftLaunchSessionStore.clear()
+        accountStatusText.text = when {
+            session == null -> "Account: not signed in. Sign in to enable authenticated Java launch."
+            problem != null -> "Account session is invalid: $problem"
+            else -> "Signed in as ${session.username} · Microsoft account (token in memory only)."
+        }
+        if (::signInButton.isInitialized) {
+            signInButton.text = if (session != null && problem == null) "Manage / sign out account" else "Sign in with Microsoft"
+        }
     }
 
     private fun card(): MaterialCardView = MaterialCardView(this).apply {
