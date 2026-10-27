@@ -1,3 +1,5 @@
 <resources>
-    <color name="sally_surface">#F6F5FB</color>
+    <color name="sally_primary">#0B57D0</color>
+    <color name="sally_background_top">#D9E6FF</color>
+    <color name="sally_background_bottom">#F8F9FF</color>
 </resources>

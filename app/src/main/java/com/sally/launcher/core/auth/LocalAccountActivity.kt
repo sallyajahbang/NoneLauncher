@@ -47,8 +47,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import com.sally.launcher.SallyLauncherTheme
 import com.sally.launcher.ThemeSettings
+import com.sally.launcher.launcherBackground
 import com.sally.launcher.core.engine.MinecraftAccountType
 import com.sally.launcher.core.engine.MinecraftLaunchSessionStore
 import com.sally.launcher.core.engine.OfflineAccountProfile
@@ -154,7 +156,7 @@ private fun LocalAccountsScreen(
     onDismissDelete: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Scaffold { padding ->
+    Scaffold(modifier = Modifier.fillMaxSize().launcherBackground(), containerColor = Color.Transparent) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(20.dp),

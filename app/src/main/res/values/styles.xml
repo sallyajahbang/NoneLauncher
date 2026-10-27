@@ -1,14 +1,9 @@
 <resources>
-    <!-- Colors come from the Compose Material 3 theme; this only prevents a white flash and sets bar transparency. -->
     <style name="Theme.SallyLauncher" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/sally_surface</item>
+        <item name="colorPrimary">@color/sally_primary</item>
+        <item name="android:windowBackground">@drawable/bg_launcher</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-    </style>
-
-    <!-- Launch (splash) theme. MainActivity switches to Theme.SallyLauncher in onCreate. -->
-    <style name="Theme.SallyLauncher.Starting" parent="Theme.SallyLauncher">
-        <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
 </resources>

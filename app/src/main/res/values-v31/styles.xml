@@ -1,6 +1,11 @@
 <resources>
-    <style name="Theme.SallyLauncher.Starting" parent="Theme.SallyLauncher">
-        <item name="android:windowSplashScreenBackground">@color/sally_surface</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+    <style name="Theme.SallyLauncher" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sally_primary</item>
+        <item name="android:windowBackground">@drawable/bg_launcher</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowSplashScreenBackground">@color/sally_background_top</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
     </style>
 </resources>

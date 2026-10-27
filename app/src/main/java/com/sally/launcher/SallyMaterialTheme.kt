@@ -1,7 +1,6 @@
 package com.sally.launcher
 
 import android.content.Context
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
@@ -9,27 +8,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
 internal enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-/** Persisted appearance settings. */
+/** Persisted appearance settings. The accent is always Material 3 blue. */
 internal data class ThemeSettings(
     val mode: ThemeMode = ThemeMode.SYSTEM,
-    val amoled: Boolean = false,
-    val dynamicColor: Boolean = false,
 ) {
     companion object {
         const val PREFS = "sally_launcher_settings"
         const val KEY_THEME_MODE = "theme_mode"
-        const val KEY_AMOLED = "amoled_black"
-        const val KEY_DYNAMIC_COLOR = "dynamic_color"
         private const val KEY_LEGACY_DARK = "dark_theme"
 
         fun read(context: Context): ThemeSettings {
@@ -41,84 +38,86 @@ internal data class ThemeSettings(
                 } else {
                     ThemeMode.SYSTEM
                 }
-            return ThemeSettings(
-                mode = mode,
-                amoled = prefs.getBoolean(KEY_AMOLED, false),
-                dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
-            )
+            return ThemeSettings(mode = mode)
         }
     }
 }
 
-// Palette: deep charcoal surfaces with violet primary and lime launch accent.
-private val DarkScheme: ColorScheme = darkColorScheme(
-    primary = Color(0xFFA98BFF),
-    onPrimary = Color(0xFF1C0C4D),
-    primaryContainer = Color(0xFF3B2A78),
-    onPrimaryContainer = Color(0xFFEADBFF),
-    secondary = Color(0xFF8BE05A),
-    onSecondary = Color(0xFF0D2600),
-    secondaryContainer = Color(0xFF2A4A1C),
-    onSecondaryContainer = Color(0xFFD2F7B8),
-    tertiary = Color(0xFFFF7AB6),
-    onTertiary = Color(0xFF4A0027),
-    tertiaryContainer = Color(0xFF5A1A3D),
-    onTertiaryContainer = Color(0xFFFFD8EA),
-    error = Color(0xFFFF6B81),
-    onError = Color(0xFF690015),
-    errorContainer = Color(0xFF7A1F30),
-    onErrorContainer = Color(0xFFFFDAE0),
-    background = Color(0xFF0C0C11),
-    onBackground = Color(0xFFEEEEF4),
-    surface = Color(0xFF0C0C11),
-    onSurface = Color(0xFFEEEEF4),
-    surfaceVariant = Color(0xFF2A2A38),
-    onSurfaceVariant = Color(0xFFA6A6BA),
-    outline = Color(0xFF4A4A5C),
-    outlineVariant = Color(0xFF2E2E3C),
-    surfaceContainerLowest = Color(0xFF08080C),
-    surfaceContainerLow = Color(0xFF14141C),
-    surfaceContainer = Color(0xFF1A1A24),
-    surfaceContainerHigh = Color(0xFF22222E),
-    surfaceContainerHighest = Color(0xFF2A2A38),
+// Material 3 tonal palette, seeded with blue #0B57D0 (light) and #A8C7FA (dark).
+private val LightScheme: ColorScheme = lightColorScheme(
+    primary = Color(0xFF0B57D0),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD3E3FD),
+    onPrimaryContainer = Color(0xFF041E49),
+    secondary = Color(0xFF565E71),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFDAE2F9),
+    onSecondaryContainer = Color(0xFF131C2B),
+    tertiary = Color(0xFF6B5778),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFF3DAFF),
+    onTertiaryContainer = Color(0xFF251431),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    background = Color(0xFFF8F9FF),
+    onBackground = Color(0xFF191C20),
+    surface = Color(0xFFF8F9FF),
+    onSurface = Color(0xFF191C20),
+    surfaceVariant = Color(0xFFDFE2EB),
+    onSurfaceVariant = Color(0xFF43474E),
+    outline = Color(0xFF73777F),
+    outlineVariant = Color(0xFFC3C6CF),
+    inverseSurface = Color(0xFF2E3135),
+    inverseOnSurface = Color(0xFFEFF0F7),
+    inversePrimary = Color(0xFFA8C7FA),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF2F3F9),
+    surfaceContainer = Color(0xFFECEEF4),
+    surfaceContainerHigh = Color(0xFFE6E8EE),
+    surfaceContainerHighest = Color(0xFFE0E2E8),
 )
 
-private val LightScheme: ColorScheme = lightColorScheme(
-    primary = Color(0xFF6D4AE0),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE6DDFF),
-    onPrimaryContainer = Color(0xFF230A63),
-    secondary = Color(0xFF3F9A1C),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFD5F5BE),
-    onSecondaryContainer = Color(0xFF0F3300),
-    tertiary = Color(0xFFB8336A),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFFD8EA),
-    onTertiaryContainer = Color(0xFF3A0019),
-    error = Color(0xFFBA1A3A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAE0),
-    onErrorContainer = Color(0xFF410010),
-    background = Color(0xFFF6F5FB),
-    onBackground = Color(0xFF15131F),
-    surface = Color(0xFFF6F5FB),
-    onSurface = Color(0xFF15131F),
-    surfaceVariant = Color(0xFFE4E1EE),
-    onSurfaceVariant = Color(0xFF4B4860),
-    outline = Color(0xFF7B7890),
-    outlineVariant = Color(0xFFD0CDDD),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFEFEDF7),
-    surfaceContainer = Color(0xFFE9E7F2),
-    surfaceContainerHigh = Color(0xFFE2DFEE),
-    surfaceContainerHighest = Color(0xFFDBD8E8),
+private val DarkScheme: ColorScheme = darkColorScheme(
+    primary = Color(0xFFA8C7FA),
+    onPrimary = Color(0xFF0A306F),
+    primaryContainer = Color(0xFF0842A0),
+    onPrimaryContainer = Color(0xFFD3E3FD),
+    secondary = Color(0xFFBEC6DC),
+    onSecondary = Color(0xFF283141),
+    secondaryContainer = Color(0xFF3E4759),
+    onSecondaryContainer = Color(0xFFDAE2F9),
+    tertiary = Color(0xFFD6BEE4),
+    onTertiary = Color(0xFF3B2948),
+    tertiaryContainer = Color(0xFF523F5F),
+    onTertiaryContainer = Color(0xFFF3DAFF),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF111318),
+    onBackground = Color(0xFFE2E2E9),
+    surface = Color(0xFF111318),
+    onSurface = Color(0xFFE2E2E9),
+    surfaceVariant = Color(0xFF44474E),
+    onSurfaceVariant = Color(0xFFC4C6D0),
+    outline = Color(0xFF8E9099),
+    outlineVariant = Color(0xFF44474F),
+    inverseSurface = Color(0xFFE2E2E9),
+    inverseOnSurface = Color(0xFF2F3033),
+    inversePrimary = Color(0xFF0B57D0),
+    surfaceContainerLowest = Color(0xFF0C0E13),
+    surfaceContainerLow = Color(0xFF1A1B20),
+    surfaceContainer = Color(0xFF1E1F25),
+    surfaceContainerHigh = Color(0xFF282A2F),
+    surfaceContainerHighest = Color(0xFF333539),
 )
 
 private val SallyShapes = Shapes(
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(20.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(28.dp),
 )
 
@@ -130,31 +129,37 @@ internal fun SallyLauncherTheme(settings: ThemeSettings, content: @Composable ()
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
     }
-    SallyMaterialTheme(darkTheme = dark, amoled = settings.amoled, dynamicColor = settings.dynamicColor, content = content)
+    SallyMaterialTheme(darkTheme = dark, content = content)
 }
 
 @Composable
-internal fun SallyMaterialTheme(
-    darkTheme: Boolean,
-    amoled: Boolean = false,
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit,
-) {
-    val context = LocalContext.current
-    var scheme: ColorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        darkTheme -> DarkScheme
-        else -> LightScheme
-    }
-    if (darkTheme && amoled) {
-        scheme = scheme.copy(
-            background = Color.Black,
-            surface = Color.Black,
-            surfaceContainerLowest = Color.Black,
-            surfaceContainerLow = Color(0xFF0A0A0E),
-            surfaceContainer = Color(0xFF0E0E14),
+internal fun SallyMaterialTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = if (darkTheme) DarkScheme else LightScheme,
+        typography = Typography(),
+        shapes = SallyShapes,
+        content = content,
+    )
+}
+
+/**
+ * Soft vertical gradient with a faint blue glow in the top-right corner.
+ * Used as the background of every launcher screen so content sits on one continuous surface.
+ */
+@Composable
+internal fun Modifier.launcherBackground(): Modifier {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val top = if (dark) Color(0xFF14285A) else Color(0xFFD9E6FF)
+    val bottom = if (dark) Color(0xFF0C0E13) else Color(0xFFF8F9FF)
+    val glow = if (dark) Color(0x553D6BDB) else Color(0x665B8DEF)
+    return this.drawBehind {
+        drawRect(brush = Brush.verticalGradient(listOf(top, bottom)))
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(glow, Color.Transparent),
+                center = Offset(size.width * 0.85f, 0f),
+                radius = size.maxDimension * 0.6f,
+            ),
         )
     }
-    MaterialTheme(colorScheme = scheme, typography = Typography(), shapes = SallyShapes, content = content)
 }

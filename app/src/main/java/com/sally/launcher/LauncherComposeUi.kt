@@ -1,99 +1,44 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package com.sally.launcher
 
-import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ArrowDropDown
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.clickable
 import com.sally.launcher.data.model.MinecraftVersion
+import java.util.Locale
+import kotlin.math.roundToInt
 
-// ------------------------------------------------------------------ state
-
-internal enum class Screen { HOME, SETTINGS }
-
-internal enum class VersionFilter(val label: String) {
-    INSTALLED("Terpasang"), RELEASE("Release"), SNAPSHOT("Snapshot"), OLD("Lawas")
+// Three destinations only. Java and account live inside Pengaturan (dialog and sheet).
+internal enum class LauncherTab(val label: String, val icon: ImageVector) {
+    HOME("Beranda", Icons.Outlined.Home),
+    VERSIONS("Versi", Icons.Outlined.Apps),
+    SETTINGS("Pengaturan", Icons.Outlined.Settings),
 }
 
-internal data class AccountItem(val name: String, val microsoft: Boolean)
+// Filters used by the Versi screen.
+internal enum class VersionFilter(val label: String) {
+    INSTALLED("Terpasang"), RELEASE("Release"), SNAPSHOT("Snapshot"), OLD("Lama"), OTHER("Lainnya")
+}
 
 internal data class LauncherDialog(
     val title: String,
@@ -101,517 +46,763 @@ internal data class LauncherDialog(
     val confirmText: String = "OK",
     val onConfirm: (() -> Unit)? = null,
     val dismissText: String? = null,
+    val onDismiss: (() -> Unit)? = null,
+    val neutralText: String? = null,
+    val onNeutral: (() -> Unit)? = null,
 )
 
 internal data class LauncherUiState(
-    val screen: Screen = Screen.HOME,
+    val tab: LauncherTab = LauncherTab.HOME,
     val versions: List<MinecraftVersion> = emptyList(),
-    val installedIds: Set<String> = emptySet(),
+    val installedVersions: List<MinecraftVersion> = emptyList(),
     val selectedVersionId: String = "",
+    val filter: VersionFilter = VersionFilter.INSTALLED,
+    val catalogStatus: String = "Memuat katalog versi resmi…",
+    val runtimeStatus: String = "Memeriksa runtime Java…",
+    val engineStatus: String = "Siap untuk diagnostik.",
+    val accountStatus: String = "Memeriksa akun…",
     val loadingCatalog: Boolean = true,
-    val busy: Boolean = false,
-    val status: String = "",
-    val javaMajors: List<Int> = emptyList(),
-    val accounts: List<AccountItem> = emptyList(),
-    val activeAccount: AccountItem? = null,
-    val accountDialog: Boolean = false,
+    val refreshing: Boolean = false,
+    val busyAction: String? = null,
+    /** Bytes moved so far by the active download, and the planned total. Drives the progress bar. */
+    val transferDone: Long = 0L,
+    val transferTotal: Long = 0L,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val amoledBlack: Boolean = false,
-    val dynamicColor: Boolean = false,
-    val keepScreenOn: Boolean = false,
     val developerMode: Boolean = false,
-    val engineStatus: String = "",
+    val keepScreenOn: Boolean = false,
+    val installedJavaMajors: List<Int> = emptyList(),
+    val supportedJavaMajors: List<Int> = listOf(8, 17),
     val dialog: LauncherDialog? = null,
 )
 
 internal data class LauncherActions(
-    val navigate: (Screen) -> Unit,
-    val play: () -> Unit,
+    val navigate: (LauncherTab) -> Unit,
+    val setFilter: (VersionFilter) -> Unit,
     val selectVersion: (String) -> Unit,
     val refreshCatalog: () -> Unit,
-    val openAccounts: (Boolean) -> Unit,
-    val selectAccount: (AccountItem) -> Unit,
-    /** Returns an error message, or null when the account was added. */
-    val addOfflineAccount: (String) -> String?,
-    val removeAccount: (AccountItem) -> Unit,
+    val installVersion: (String) -> Unit,
+    val redownloadVersion: (String) -> Unit,
+    val play: () -> Unit,
+    val installRuntime: () -> Unit,
+    val redownloadRuntime: () -> Unit,
+    val installJava: (Int) -> Unit,
     val signInMicrosoft: () -> Unit,
-    val repairGame: () -> Unit,
-    val reinstallJava: () -> Unit,
+    val manageLocalAccounts: () -> Unit,
+    val prepareProfile: () -> Unit,
+    val probeJvm: () -> Unit,
+    val testJvm: () -> Unit,
+    val testGraphics: () -> Unit,
+    val testPojav: () -> Unit,
     val setThemeMode: (ThemeMode) -> Unit,
-    val setAmoledBlack: (Boolean) -> Unit,
-    val setDynamicColor: (Boolean) -> Unit,
-    val setKeepScreenOn: (Boolean) -> Unit,
     val requestDeveloperMode: (Boolean) -> Unit,
-    val devPrepare: () -> Unit,
-    val devProbe: () -> Unit,
-    val devJavaTest: () -> Unit,
-    val devGraphics: () -> Unit,
-    val devPojav: () -> Unit,
+    val setKeepScreenOn: (Boolean) -> Unit,
     val dismissDialog: () -> Unit,
 )
 
-// ------------------------------------------------------------------ root
-
 @Composable
 internal fun SallyLauncherRoot(state: LauncherUiState, actions: LauncherActions) {
-    SallyLauncherTheme(
-        settings = ThemeSettings(mode = state.themeMode, amoled = state.amoledBlack, dynamicColor = state.dynamicColor),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-        ) {
-            when (state.screen) {
-                Screen.HOME -> HomeScreen(state, actions)
-                Screen.SETTINGS -> SettingsScreen(state, actions)
+    SallyLauncherTheme(settings = ThemeSettings(mode = state.themeMode)) {
+        var accountOpen by remember { mutableStateOf(false) }
+        val wide = LocalConfiguration.current.screenWidthDp >= 600
+        Scaffold(
+            modifier = Modifier.fillMaxSize().launcherBackground(),
+            containerColor = Color.Transparent,
+            bottomBar = { if (!wide) LauncherBottomBar(state, actions) },
+        ) { padding ->
+            Row(Modifier.fillMaxSize().padding(padding)) {
+                if (wide) LauncherRail(state, actions)
+                LauncherContent(
+                    state = state,
+                    actions = actions,
+                    onOpenAccount = { accountOpen = true },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
             }
-            if (state.accountDialog) AccountDialog(state, actions)
-            state.dialog?.let { dialog ->
-                AlertDialog(
-                    onDismissRequest = actions.dismissDialog,
-                    title = { Text(dialog.title) },
-                    text = { Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) { Text(dialog.message) } },
-                    confirmButton = {
-                        TextButton(onClick = { actions.dismissDialog(); dialog.onConfirm?.invoke() }) { Text(dialog.confirmText) }
+        }
+        if (accountOpen) AccountSheet(state = state, actions = actions, onDismiss = { accountOpen = false })
+        state.dialog?.let { dialog -> LauncherAlert(dialog = dialog, actions = actions) }
+    }
+}
+
+@Composable
+private fun LauncherBottomBar(state: LauncherUiState, actions: LauncherActions) {
+    NavigationBar(containerColor = Color.Transparent) {
+        LauncherTab.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = state.tab == tab,
+                onClick = { actions.navigate(tab) },
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                label = { Text(tab.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LauncherRail(state: LauncherUiState, actions: LauncherActions) {
+    NavigationRail(containerColor = Color.Transparent) {
+        LauncherTab.entries.forEach { tab ->
+            NavigationRailItem(
+                selected = state.tab == tab,
+                onClick = { actions.navigate(tab) },
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                label = { Text(tab.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LauncherContent(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
+    when (state.tab) {
+        LauncherTab.HOME -> HomeScreen(state, actions, onOpenAccount, modifier)
+        LauncherTab.VERSIONS -> VersionsScreen(state, actions, modifier)
+        LauncherTab.SETTINGS -> SettingsScreen(state, actions, onOpenAccount, modifier)
+    }
+}
+
+@Composable
+private fun LauncherAlert(dialog: LauncherDialog, actions: LauncherActions) {
+    AlertDialog(
+        onDismissRequest = actions.dismissDialog,
+        title = { Text(dialog.title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(dialog.message, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                if (dialog.dismissText != null) {
+                    TextButton(onClick = { actions.dismissDialog(); dialog.onDismiss?.invoke() }) { Text(dialog.dismissText) }
+                }
+                if (dialog.neutralText != null) {
+                    TextButton(onClick = { actions.dismissDialog(); dialog.onNeutral?.invoke() }) { Text(dialog.neutralText) }
+                }
+                TextButton(onClick = { actions.dismissDialog(); dialog.onConfirm?.invoke() }) { Text(dialog.confirmText) }
+            }
+        },
+    )
+}
+
+// ---------------------------------------------------------------- Beranda
+
+@Composable
+private fun HomeScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
+    val active = activeVersion(state)
+    val busy = state.busyAction != null
+    val javaReady = state.installedJavaMajors.isNotEmpty()
+    Column(
+        modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Sally Launcher",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onOpenAccount) {
+                Icon(Icons.Outlined.AccountCircle, contentDescription = "Akun")
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Column(
+            Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Minecraft Java", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(
+                active?.id ?: "Belum ada versi",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                homeStatusText(state, hasActive = active != null, javaReady = javaReady, busy = busy),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            VersionPicker(state, actions)
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = actions.play,
+                enabled = active != null && !busy,
+                shape = RoundedCornerShape(32.dp),
+                modifier = Modifier.fillMaxWidth().height(64.dp),
+            ) {
+                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Main", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            if (busy) {
+                TransferCard(status = busyStatus(state), done = state.transferDone, total = state.transferTotal)
+            } else if (active != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!javaReady) TextButton(onClick = actions.installRuntime) { Text("Pasang Java") }
+                    TextButton(onClick = { actions.installVersion(active.id) }) { Text("Perbaiki file") }
+                }
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+private fun homeStatusText(state: LauncherUiState, hasActive: Boolean, javaReady: Boolean, busy: Boolean): String = when {
+    busy -> "Sedang memproses…"
+    !hasActive -> "Pasang satu versi di tab Versi untuk mulai."
+    javaReady -> "Siap dimainkan · Java ${state.installedJavaMajors.joinToString(", ")}"
+    else -> "Java belum terpasang."
+}
+
+@Composable
+private fun VersionPicker(state: LauncherUiState, actions: LauncherActions) {
+    var open by remember { mutableStateOf(false) }
+    val active = activeVersion(state)
+    Box {
+        FilledTonalButton(
+            onClick = { open = true },
+            enabled = state.installedVersions.isNotEmpty() && state.busyAction == null,
+            shape = CircleShape,
+        ) {
+            Text(active?.id ?: "Pilih versi")
+            Spacer(Modifier.width(6.dp))
+            Text("▾")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            state.installedVersions.forEach { version ->
+                DropdownMenuItem(
+                    text = { Text(version.id) },
+                    onClick = {
+                        open = false
+                        actions.selectVersion(version.id)
                     },
-                    dismissButton = if (dialog.dismissText != null) {
-                        { TextButton(onClick = actions.dismissDialog) { Text(dialog.dismissText) } }
-                    } else null,
                 )
             }
         }
     }
 }
 
-// ------------------------------------------------------------------ home
+// ---------------------------------------------------------------- Versi
 
 @Composable
-private fun HomeScreen(state: LauncherUiState, actions: LauncherActions) {
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
-    var versionDialog by remember { mutableStateOf(false) }
-    val selected = state.versions.firstOrNull { it.id == state.selectedVersionId }
-    val installed = selected != null && selected.id in state.installedIds
-
-    val hero: @Composable ColumnScope.() -> Unit = {
-        Text("Minecraft Java", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(
-            selected?.id ?: if (state.loadingCatalog) "…" else "Pilih versi",
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            when {
-                selected == null -> if (state.loadingCatalog) "Memuat daftar versi…" else "Belum ada versi dipilih"
-                installed -> "Terpasang · siap dimainkan"
-                else -> "Akan diunduh otomatis saat Main"
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    val controls: @Composable ColumnScope.() -> Unit = {
-        SelectorRow(
-            leading = state.activeAccount?.name?.take(1)?.uppercase() ?: "+",
-            title = state.activeAccount?.name ?: "Pilih akun",
-            subtitle = when {
-                state.activeAccount == null -> "Belum ada akun"
-                state.activeAccount.microsoft -> "Microsoft"
-                else -> "Offline"
-            },
-            enabled = !state.busy,
-            onClick = { actions.openAccounts(true) },
-        )
-        Spacer(Modifier.height(10.dp))
-        SelectorRow(
-            leading = "MC",
-            title = selected?.id ?: "Pilih versi",
-            subtitle = if (selected == null) "Ketuk untuk memilih" else versionTypeLabel(selected.type),
-            enabled = !state.busy,
-            onClick = { versionDialog = true },
-        )
-        Spacer(Modifier.height(20.dp))
-        Button(
-            onClick = actions.play,
-            enabled = !state.busy && selected != null,
-            shape = CircleShape,
-            modifier = Modifier.fillMaxWidth().height(64.dp),
-        ) {
-            if (state.busy) {
-                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-                Spacer(Modifier.width(10.dp))
-                Text("Menyiapkan…", style = MaterialTheme.typography.titleMedium)
-            } else {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Main", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-        }
-        if (state.busy) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 14.dp))
-        }
-        if (state.status.isNotBlank()) {
-            Text(
-                state.status,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
-        }
-    }
-
-    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        if (wide) {
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(56.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), content = hero)
-                Column(Modifier.weight(1f).widthIn(max = 380.dp), content = controls)
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, content = hero)
-                Spacer(Modifier.height(32.dp))
-                Column(Modifier.widthIn(max = 420.dp), content = controls)
-            }
-        }
-        IconButton(
-            onClick = { actions.navigate(Screen.SETTINGS) },
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-        ) { Icon(Icons.Outlined.Settings, contentDescription = "Pengaturan") }
-    }
-
-    if (versionDialog) {
-        VersionDialog(state, actions, onDismiss = { versionDialog = false })
-    }
-}
-
-@Composable
-private fun SelectorRow(leading: String, title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.padding(start = 14.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(leading, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-// ------------------------------------------------------------------ pickers (dialogs sized for landscape)
-
-@Composable
-private fun PickerDialog(title: String, onDismiss: () -> Unit, actionsRow: @Composable (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.92f).dp
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth(0.9f).widthIn(max = 480.dp).heightIn(max = maxHeight),
-        ) {
-            Column(Modifier.padding(vertical = 20.dp)) {
-                Row(Modifier.padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    actionsRow?.invoke()
-                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, contentDescription = "Tutup") }
-                }
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun VersionDialog(state: LauncherUiState, actions: LauncherActions, onDismiss: () -> Unit) {
+private fun VersionsScreen(state: LauncherUiState, actions: LauncherActions, modifier: Modifier) {
     var query by remember { mutableStateOf("") }
-    var filter by remember { mutableStateOf(if (state.installedIds.isNotEmpty()) VersionFilter.INSTALLED else VersionFilter.RELEASE) }
-    val list = remember(state.versions, state.installedIds, filter, query) {
-        state.versions.filter { version ->
-            val inFilter = when (filter) {
-                VersionFilter.INSTALLED -> version.id in state.installedIds
-                VersionFilter.RELEASE -> version.type.equals("release", true)
-                VersionFilter.SNAPSHOT -> version.type.equals("snapshot", true)
-                VersionFilter.OLD -> version.type.startsWith("old_", true)
-            }
-            inFilter && (query.isBlank() || version.id.contains(query.trim(), ignoreCase = true))
-        }
+    var sheetVersionId by remember { mutableStateOf<String?>(null) }
+    val baseList = when (state.filter) {
+        VersionFilter.INSTALLED -> state.installedVersions
+        VersionFilter.RELEASE -> state.versions.filter { it.type.equals("release", true) }
+        VersionFilter.SNAPSHOT -> state.versions.filter { it.type.equals("snapshot", true) }
+        VersionFilter.OLD -> state.versions.filter { it.type.equals("old_beta", true) || it.type.equals("old_alpha", true) }
+        VersionFilter.OTHER -> state.versions.filter { filterForVersionType(it.type) == VersionFilter.OTHER }
     }
-    PickerDialog(
-        title = "Pilih versi",
-        onDismiss = onDismiss,
-        actionsRow = {
-            IconButton(onClick = actions.refreshCatalog, enabled = !state.loadingCatalog) {
-                if (state.loadingCatalog) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Outlined.Refresh, contentDescription = "Segarkan daftar")
-            }
-        },
+    val list = baseList.filter { query.isBlank() || it.id.contains(query.trim(), ignoreCase = true) }
+    val busy = state.busyAction != null
+
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Versi", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (state.versions.isEmpty()) "Memuat daftar versi…"
+                        else "${state.installedVersions.size} terpasang dari ${state.versions.size} versi",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = actions.refreshCatalog, enabled = !state.refreshing) {
+                    if (state.refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Outlined.Refresh, contentDescription = "Segarkan")
+                }
+            }
+        }
+        item {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 placeholder = { Text("Cari versi") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
             )
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                VersionFilter.entries.forEach { item ->
-                    FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item.label) })
-                }
-            }
         }
-        if (list.isEmpty()) {
-            Text(
-                if (state.loadingCatalog) "Memuat…" else if (filter == VersionFilter.INSTALLED) "Belum ada versi terpasang. Pilih Release." else "Tidak ada versi.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(24.dp),
-            )
-        } else {
-            LazyColumn(Modifier.weight(1f, fill = false).padding(top = 8.dp)) {
-                items(list, key = { it.id }) { version ->
-                    val isInstalled = version.id in state.installedIds
-                    ListItem(
-                        headlineContent = { Text(version.id) },
-                        supportingContent = {
-                            Text(
-                                versionTypeLabel(version.type) + version.releaseTime.take(10).takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty() +
-                                    if (isInstalled) "" else " · belum diunduh",
-                            )
-                        },
-                        trailingContent = {
-                            if (version.id == state.selectedVersionId) Icon(Icons.Outlined.Check, contentDescription = "Dipilih", tint = MaterialTheme.colorScheme.primary)
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable {
-                            actions.selectVersion(version.id)
-                            onDismiss()
-                        },
+        item {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                VersionFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = state.filter == filter,
+                        onClick = { actions.setFilter(filter) },
+                        label = { Text(filter.label) },
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AccountDialog(state: LauncherUiState, actions: LauncherActions) {
-    var addOpen by remember { mutableStateOf(state.accounts.isEmpty()) }
-    var removeTarget by remember { mutableStateOf<AccountItem?>(null) }
-    val close = { actions.openAccounts(false) }
-
-    PickerDialog(title = "Akun", onDismiss = close) {
-        if (state.accounts.isEmpty()) {
-            Text(
-                "Belum ada akun. Tambah akun offline untuk mulai bermain.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-        } else {
-            LazyColumn(Modifier.weight(1f, fill = false)) {
-                items(state.accounts, key = { (if (it.microsoft) "ms:" else "off:") + it.name }) { account ->
-                    ListItem(
-                        headlineContent = { Text(account.name) },
-                        supportingContent = { Text(if (account.microsoft) "Microsoft" else "Offline") },
-                        leadingContent = { RadioButton(selected = account == state.activeAccount, onClick = null) },
-                        trailingContent = if (account.microsoft) null else {
-                            { IconButton(onClick = { removeTarget = account }) { Icon(Icons.Outlined.Delete, contentDescription = "Hapus ${account.name}") } }
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable { actions.selectAccount(account) },
-                    )
-                }
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilledTonalButton(onClick = { addOpen = true }, modifier = Modifier.weight(1f)) { Text("Akun offline") }
-            OutlinedButton(onClick = actions.signInMicrosoft, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Microsoft")
-            }
-        }
-    }
-
-    if (addOpen) {
-        var name by remember { mutableStateOf("") }
-        var error by remember { mutableStateOf<String?>(null) }
-        val submit = {
-            val result = actions.addOfflineAccount(name)
-            if (result == null) addOpen = false else error = result
-        }
-        AlertDialog(
-            onDismissRequest = { addOpen = false },
-            title = { Text("Akun offline") },
-            text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(16); error = null },
-                    singleLine = true,
-                    label = { Text("Username") },
-                    isError = error != null,
-                    supportingText = { Text(error ?: "3–16 huruf, angka, atau _") },
-                    modifier = Modifier.fillMaxWidth(),
+        if (busy) {
+            item {
+                TransferCard(
+                    status = busyStatus(state),
+                    done = state.transferDone,
+                    total = state.transferTotal,
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
-            },
-            confirmButton = { TextButton(onClick = submit) { Text("Tambah") } },
-            dismissButton = { TextButton(onClick = { addOpen = false }) { Text("Batal") } },
-        )
+            }
+        }
+        when {
+            state.loadingCatalog && list.isEmpty() && state.filter != VersionFilter.INSTALLED -> item {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            }
+            list.isEmpty() -> item {
+                EmptyVersions(state = state, actions = actions)
+            }
+            else -> items(list, key = { it.id }) { version ->
+                VersionRow(
+                    version = version,
+                    installed = state.installedVersions.any { it.id == version.id },
+                    inUse = state.selectedVersionId == version.id,
+                    onClick = { sheetVersionId = version.id },
+                )
+            }
+        }
     }
-    removeTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { removeTarget = null },
-            title = { Text("Hapus ${target.name}?") },
-            text = { Text("Akun offline ini akan dihapus dari launcher.") },
-            confirmButton = { TextButton(onClick = { actions.removeAccount(target); removeTarget = null }) { Text("Hapus") } },
-            dismissButton = { TextButton(onClick = { removeTarget = null }) { Text("Batal") } },
-        )
+
+    sheetVersionId?.let { id ->
+        (state.versions + state.installedVersions).firstOrNull { it.id == id }?.let { version ->
+            VersionSheet(version = version, state = state, actions = actions, onDismiss = { sheetVersionId = null })
+        }
     }
 }
 
-// ------------------------------------------------------------------ settings
+@Composable
+private fun EmptyVersions(state: LauncherUiState, actions: LauncherActions) {
+    val installedFilter = state.filter == VersionFilter.INSTALLED
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            if (installedFilter) "Belum ada versi terpasang" else "Tidak ada versi di kategori ini",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            if (installedFilter) "Pilih Release lalu pasang satu versi." else "Segarkan daftar atau periksa koneksi.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = {
+            if (installedFilter) actions.setFilter(VersionFilter.RELEASE) else actions.refreshCatalog()
+        }) {
+            Text(if (installedFilter) "Lihat Release" else "Segarkan")
+        }
+    }
+}
 
 @Composable
-private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions) {
-    BackHandler { actions.navigate(Screen.HOME) }
-    var creditsOpen by remember { mutableStateOf(false) }
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("Pengaturan") },
-                navigationIcon = {
-                    IconButton(onClick = { actions.navigate(Screen.HOME) }) { Icon(Icons.Outlined.ArrowBack, contentDescription = "Kembali") }
-                },
-            )
+private fun VersionRow(version: MinecraftVersion, installed: Boolean, inUse: Boolean, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = {
+            Text(version.id, fontWeight = if (inUse) FontWeight.Bold else FontWeight.Normal)
         },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 640.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                SectionLabel("Tampilan")
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    ThemeMode.entries.forEachIndexed { index, mode ->
-                        SegmentedButton(
-                            selected = state.themeMode == mode,
-                            onClick = { actions.setThemeMode(mode) },
-                            shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
-                            label = { Text(themeModeLabel(mode)) },
-                        )
-                    }
-                }
-                SwitchRow("AMOLED hitam", "Latar hitam pekat di tema gelap", state.amoledBlack, actions.setAmoledBlack)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    SwitchRow("Warna dinamis", "Ikuti warna wallpaper", state.dynamicColor, actions.setDynamicColor)
-                }
-                SwitchRow("Layar tetap menyala", "Saat launcher terbuka", state.keepScreenOn, actions.setKeepScreenOn)
+        supportingContent = {
+            Text("${versionFilterLabel(version.type)} · ${version.releaseTime.take(10).ifBlank { "-" }}")
+        },
+        trailingContent = {
+            when {
+                inUse -> Text("Dipakai", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                installed -> Text("Terpasang", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> Unit
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
+    )
+}
 
-                SectionLabel("Game")
-                ActionRow("Perbaiki file game", "Unduh ulang dan verifikasi ${state.selectedVersionId.ifBlank { "versi terpilih" }}", enabled = !state.busy && state.selectedVersionId.isNotBlank(), onClick = actions.repairGame)
-                ActionRow(
-                    "Pasang ulang Java",
-                    if (state.javaMajors.isEmpty()) "Belum ada Java" else "Terpasang: " + state.javaMajors.joinToString { "Java $it" } + " (dipasang otomatis saat Main)",
-                    enabled = !state.busy && state.selectedVersionId.isNotBlank(),
-                    onClick = actions.reinstallJava,
-                )
-
-                SectionLabel("Lanjutan")
-                SwitchRow("Mode developer", "Alat diagnostik untuk pengguna tingkat lanjut", state.developerMode, actions.requestDeveloperMode)
-                if (state.developerMode) {
-                    if (state.engineStatus.isNotBlank()) {
-                        Text(state.engineStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                    }
-                    ActionRow("Siapkan profil launch", "Cek metadata, classpath, runtime, dan penghalang", !state.busy, actions.devPrepare)
-                    ActionRow("Probe loader JVM", "Cek libjli dan libjvm", !state.busy, actions.devProbe)
-                    ActionRow("Tes runtime Java", "Jalankan java -version di proses terpisah", !state.busy, actions.devJavaTest)
-                    ActionRow("Tes grafis & input", "Buka diagnostik GLES dan input", !state.busy, actions.devGraphics)
-                    ActionRow("Tes jembatan Pojav", "Buka diagnostik surface dan JNI", !state.busy, actions.devPojav)
-                }
-
-                SectionLabel("Tentang")
-                ActionRow("Sally Launcher 0.1.0", "Data game: Android/data/com.sally.launcher/files/minecraft", true) {}
-                ActionRow("Kredit & lisensi", "Pojav / Amethyst (LGPL-3.0)", true) { creditsOpen = true }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VersionSheet(version: MinecraftVersion, state: LauncherUiState, actions: LauncherActions, onDismiss: () -> Unit) {
+    val installed = state.installedVersions.any { it.id == version.id }
+    val busy = state.busyAction == "install:${version.id}" || state.busyAction == "redownload:${version.id}"
+    val inUse = state.selectedVersionId == version.id
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(version.id, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "${versionFilterLabel(version.type)} · ${version.releaseTime.take(10).ifBlank { "-" }}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (busy) {
+                TransferCard(status = state.catalogStatus, done = state.transferDone, total = state.transferTotal)
+            }
+            if (installed) {
+                Button(
+                    onClick = { onDismiss(); actions.selectVersion(version.id) },
+                    enabled = !busy && !inUse,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (inUse) "Sedang dipakai" else "Pakai di Beranda") }
+                OutlinedButton(
+                    onClick = { onDismiss(); actions.redownloadVersion(version.id) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Unduh ulang") }
+            } else {
+                Button(
+                    onClick = { onDismiss(); actions.installVersion(version.id) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (busy) "Sedang dipasang…" else "Pasang") }
             }
         }
     }
-    if (creditsOpen) {
-        AlertDialog(
-            onDismissRequest = { creditsOpen = false },
-            title = { Text("Kredit & lisensi") },
-            text = {
-                Text(
-                    "Terinspirasi oleh Amethyst-Android (AngelAuraMC) dan PojavLauncher (PojavLauncherTeam), keduanya berlisensi LGPL-3.0. " +
-                        "Tampilan didesain ulang dengan Material 3 tanpa menyalin kode UI keduanya. Lisensi dan notice engine ada di assets/engine/pojav.",
+}
+
+// ---------------------------------------------------------------- Pengaturan
+
+@Composable
+private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions, onOpenAccount: () -> Unit, modifier: Modifier) {
+    var javaOpen by remember { mutableStateOf(false) }
+    var versionTaps by remember { mutableIntStateOf(0) }
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        item {
+            Text("Pengaturan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        item {
+            SettingsGroup("Tampilan") {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        ThemeMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = state.themeMode == mode,
+                                onClick = { actions.setThemeMode(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = ThemeMode.entries.size),
+                                label = { Text(themeModeLabel(mode)) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            SettingsGroup("Akun") {
+                SettingRow(title = "Akun", supporting = state.accountStatus, onClick = onOpenAccount)
+            }
+        }
+        item {
+            SettingsGroup("Java") {
+                SettingRow(title = "Runtime Java", supporting = state.runtimeStatus, onClick = { javaOpen = true })
+            }
+        }
+        item {
+            SettingsGroup("Umum") {
+                SwitchRow(
+                    title = "Layar tetap menyala",
+                    supporting = "Cegah layar mati saat launcher terbuka.",
+                    checked = state.keepScreenOn,
+                    onCheckedChange = actions.setKeepScreenOn,
                 )
-            },
-            confirmButton = { TextButton(onClick = { creditsOpen = false }) { Text("OK") } },
-        )
+            }
+        }
+        if (state.developerMode) {
+            item {
+                SettingsGroup("Developer") {
+                    DevRow("Siapkan profil launch", "Cek metadata, classpath, runtime, akun, dan penghalang.", "prepare", state.busyAction, actions.prepareProfile)
+                    DevRow("Probe loader JVM", "Cek libjli dan libjvm. Tidak menjalankan Minecraft.", "probe", state.busyAction, actions.probeJvm)
+                    DevRow("Tes runtime Java", "Jalankan proses JLI sekali pakai dengan -version.", "smoke", state.busyAction, actions.testJvm)
+                    DevRow("Tes grafis & input", "Buka permukaan diagnostik GLES dan input.", null, state.busyAction, actions.testGraphics)
+                    DevRow("Tes jembatan Pojav", "Buka diagnostik jembatan surface / JNI.", null, state.busyAction, actions.testPojav)
+                    TextButton(
+                        onClick = { actions.requestDeveloperMode(false) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) { Text("Matikan mode developer") }
+                }
+            }
+        }
+        item {
+            SettingsGroup("Tentang") {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            versionTaps++
+                            if (versionTaps >= 7) {
+                                versionTaps = 0
+                                actions.requestDeveloperMode(!state.developerMode)
+                            }
+                        }
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Sally Launcher 0.1.0", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Ketuk 7 kali untuk mode developer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "Terinspirasi Amethyst-Android dan PojavLauncher (LGPL-3.0).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    if (javaOpen) JavaDialog(state = state, actions = actions, onDismiss = { javaOpen = false })
+}
+
+@Composable
+private fun JavaDialog(state: LauncherUiState, actions: LauncherActions, onDismiss: () -> Unit) {
+    var chosenMajor by remember(state.supportedJavaMajors) {
+        mutableIntStateOf(state.supportedJavaMajors.firstOrNull() ?: 17)
+    }
+    val javaBusy = state.busyAction == "runtime" || state.busyAction == "runtime-redownload"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Runtime Java") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (javaBusy) {
+                    TransferCard(status = state.runtimeStatus, done = state.transferDone, total = state.transferTotal)
+                } else {
+                    Text(
+                        if (state.installedJavaMajors.isEmpty()) "Belum ada Java terpasang." else "Terpasang: " + state.installedJavaMajors.joinToString(", ") { "Java $it" },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                state.supportedJavaMajors.forEachIndexed { index, major ->
+                    val installed = major in state.installedJavaMajors
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(enabled = !javaBusy) { chosenMajor = major }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = chosenMajor == major, onClick = { chosenMajor = major }, enabled = !javaBusy)
+                        Text("Java $major", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        when {
+                            installed -> Text("Terpasang", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            index == 0 -> Text("Disarankan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else -> Unit
+                        }
+                    }
+                }
+                Text(
+                    "1.16.5 ke bawah → Java 8 · 1.17–1.20.4 → Java 17 · 1.20.5 ke atas → Java 21 (belum didukung).",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(
+                    onClick = { onDismiss(); actions.redownloadRuntime() },
+                    enabled = !javaBusy && state.busyAction == null,
+                ) { Text("Unduh ulang Java untuk versi terpilih") }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { actions.installJava(chosenMajor) },
+                enabled = !javaBusy && state.busyAction == null,
+            ) { Text(if (javaBusy) "Memasang…" else "Pasang") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Tutup") } },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AccountSheet(state: LauncherUiState, actions: LauncherActions, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Akun", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(state.accountStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = { onDismiss(); actions.signInMicrosoft() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Masuk dengan Microsoft")
+            }
+            OutlinedButton(onClick = { onDismiss(); actions.manageLocalAccounts() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Profil lokal / offline")
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Shared pieces
+
+/** Progress for a download or install. The bar moves with bytes, and the label shows MB done / MB total. */
+@Composable
+private fun TransferCard(status: String, done: Long, total: Long, modifier: Modifier = Modifier) {
+    val known = total > 0L
+    val fraction = if (known) (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (known) {
+                Text(
+                    "${(fraction * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        if (known) {
+            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+            Text(
+                "${formatBytes(done.coerceAtMost(total))} dari ${formatBytes(total)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
     }
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-    )
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 4.dp),
+        )
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(content = content)
+        }
+    }
 }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable { onChange(!checked) },
-    )
+private fun SettingRow(title: String, supporting: String?, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        if (supporting != null) {
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
-private fun ActionRow(title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
-    )
+private fun SwitchRow(title: String, supporting: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(supporting, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
-// ------------------------------------------------------------------ labels
+@Composable
+private fun DevRow(
+    title: String,
+    description: String,
+    busyKey: String?,
+    busyAction: String?,
+    onClick: () -> Unit,
+) {
+    val running = busyKey != null && busyAction == busyKey
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FilledTonalButton(
+            onClick = onClick,
+            enabled = busyAction == null,
+            modifier = Modifier.align(Alignment.End),
+        ) {
+            Text(if (running) "Berjalan…" else "Jalankan")
+        }
+    }
+}
+
+private fun activeVersion(state: LauncherUiState): MinecraftVersion? =
+    state.installedVersions.firstOrNull { it.id == state.selectedVersionId } ?: state.installedVersions.firstOrNull()
+
+/** Which operation is running decides which status line is the most useful to show. */
+private fun busyStatus(state: LauncherUiState): String {
+    val action = state.busyAction.orEmpty()
+    return when {
+        action.startsWith("runtime") -> state.runtimeStatus
+        action.startsWith("install") || action.startsWith("redownload") -> state.catalogStatus
+        else -> state.engineStatus
+    }
+}
+
+private const val KIB = 1024L
+private const val MIB = KIB * 1024L
+private const val GIB = MIB * 1024L
+
+internal fun formatBytes(bytes: Long): String = when {
+    bytes >= GIB -> String.format(Locale.US, "%.2f GB", bytes.toDouble() / GIB)
+    bytes >= MIB -> String.format(Locale.US, "%.1f MB", bytes.toDouble() / MIB)
+    bytes >= KIB -> String.format(Locale.US, "%.0f KB", bytes.toDouble() / KIB)
+    else -> "$bytes B"
+}
 
 private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
     ThemeMode.SYSTEM -> "Sistem"
@@ -619,10 +810,17 @@ private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
     ThemeMode.DARK -> "Gelap"
 }
 
-private fun versionTypeLabel(type: String): String = when (type.lowercase()) {
-    "release" -> "Release"
+private fun filterForVersionType(type: String): VersionFilter = when (type.lowercase()) {
+    "release" -> VersionFilter.RELEASE
+    "snapshot" -> VersionFilter.SNAPSHOT
+    "old_beta", "old_alpha" -> VersionFilter.OLD
+    else -> VersionFilter.OTHER
+}
+
+private fun versionFilterLabel(type: String): String = when (type.lowercase()) {
+    "release" -> "Vanilla · Release"
     "snapshot" -> "Snapshot"
-    "old_beta" -> "Beta lawas"
-    "old_alpha" -> "Alpha lawas"
-    else -> type.replaceFirstChar { it.uppercase() }
+    "old_beta" -> "Old Beta"
+    "old_alpha" -> "Old Alpha"
+    else -> type.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }

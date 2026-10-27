@@ -55,6 +55,7 @@ class RuntimeManager(context: Context) {
         version: MinecraftVersion,
         forceRedownload: Boolean = false,
         resumeRedownload: Boolean = false,
+        onBytes: (done: Long, total: Long) -> Unit = { _, _ -> },
         onProgress: (String) -> Unit,
     ): RuntimeInfo {
         onProgress("Checking Java requirement for Minecraft ${version.id}…")
@@ -68,14 +69,17 @@ class RuntimeManager(context: Context) {
         if (chosenMajor != requiredMajor) {
             onProgress("Minecraft requires Java $requiredMajor; using compatible Java $chosenMajor…")
         }
-        return installRuntime(chosenMajor, forceRedownload, resumeRedownload, onProgress)
+        return installRuntime(chosenMajor, forceRedownload, resumeRedownload, onBytes, onProgress)
     }
 
     fun supportedJavaMajors(): List<Int> = supportedJavaMajors(currentRuntimeArchitecture())
 
     /** Install a specific supported major chosen from Setting/Java, without a Minecraft version. */
-    fun installMajor(major: Int, onProgress: (String) -> Unit): RuntimeInfo =
-        installRuntime(major, forceRedownload = false, resumeRedownload = false, onProgress = onProgress)
+    fun installMajor(
+        major: Int,
+        onBytes: (done: Long, total: Long) -> Unit = { _, _ -> },
+        onProgress: (String) -> Unit,
+    ): RuntimeInfo = installRuntime(major, forceRedownload = false, resumeRedownload = false, onBytes = onBytes, onProgress = onProgress)
 
     fun installedRuntimes(): List<RuntimeInfo> {
         if (!runtimesRoot.isDirectory) return emptyList()
@@ -119,7 +123,13 @@ class RuntimeManager(context: Context) {
         return declaredMajor.takeIf { it in 1..99 } ?: 8
     }
 
-    private fun installRuntime(major: Int, forceRedownload: Boolean, resumeRedownload: Boolean, onProgress: (String) -> Unit): RuntimeInfo {
+    private fun installRuntime(
+        major: Int,
+        forceRedownload: Boolean,
+        resumeRedownload: Boolean,
+        onBytes: (done: Long, total: Long) -> Unit,
+        onProgress: (String) -> Unit,
+    ): RuntimeInfo {
         val architecture = currentRuntimeArchitecture()
         if (major !in supportedJavaMajors(architecture)) {
             throw IOException("Java $major is not available for Android $architecture from the configured runtime source")
@@ -150,7 +160,7 @@ class RuntimeManager(context: Context) {
                 if (archive.exists()) archive.delete()
                 if (forceRedownload && !resumeRedownload) part.delete()
                 onProgress(if (forceRedownload) "Redownloading Java $major runtime…" else "Downloading Java $major runtime…")
-                downloadArchive(asset, part, onProgress)
+                downloadArchive(asset, part, onBytes, onProgress)
                 if (!part.renameTo(archive)) {
                     part.copyTo(archive, overwrite = true)
                     if (!part.delete()) part.deleteOnExit()
@@ -238,7 +248,12 @@ class RuntimeManager(context: Context) {
         return RuntimeAsset(major, architecture, url, sha256, size)
     }
 
-    private fun downloadArchive(asset: RuntimeAsset, destination: File, onProgress: (String) -> Unit) {
+    private fun downloadArchive(
+        asset: RuntimeAsset,
+        destination: File,
+        onBytes: (done: Long, total: Long) -> Unit,
+        onProgress: (String) -> Unit,
+    ) {
         ResilientDownloader.download(
             urlString = asset.url,
             destination = destination,
@@ -246,10 +261,7 @@ class RuntimeManager(context: Context) {
             expectedDigest = asset.sha256,
             digestAlgorithm = "SHA-256",
             maximumBytes = MAX_ARCHIVE_BYTES,
-            onProgress = { downloaded, total ->
-                val totalLabel = if (total > 0L) " / ${total / (1024 * 1024)} MB" else ""
-                onProgress("Downloading Java ${asset.majorVersion}: ${downloaded / (1024 * 1024)} MB$totalLabel")
-            },
+            onProgress = { downloaded, total -> onBytes(downloaded, if (total > 0L) total else asset.size) },
             onStatus = onProgress,
         )
     }
