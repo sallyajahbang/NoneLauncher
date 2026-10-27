@@ -152,8 +152,8 @@ class LaunchProfileBuilder(context: Context) {
             "natives_directory" to nativesDirectory.absolutePath,
             "auth_session" to "0",
             "game_assets" to assetsRoot.absolutePath,
-            "resolution_width" to "854",
-            "resolution_height" to "480",
+            "resolution_width" to GameDisplaySize.resolve(appContext).first.toString(),
+            "resolution_height" to GameDisplaySize.resolve(appContext).second.toString(),
             "quickPlayPath" to "",
         )
 

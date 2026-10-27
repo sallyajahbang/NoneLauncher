@@ -10,6 +10,8 @@ public final class JREUtils {
     public static native void releaseBridgeWindow();
     public static native void setLdLibraryPath(String ldLibraryPath);
     public static native int chdir(String path);
+    /** dlopen(RTLD_GLOBAL|RTLD_LAZY) as upstream Pojav does before JLI_Launch. Returns false on failure. */
+    public static native boolean dlopen(String libPath);
     /** Registers the Android-side receiver used by Pojav's fatal JVM/signal path. */
     public static native void setupExitMethod(Context context);
 }

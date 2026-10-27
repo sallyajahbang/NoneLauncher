@@ -19,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.button.MaterialButton
 import com.sally.launcher.data.model.MinecraftVersion
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
 
@@ -32,6 +33,8 @@ class PojavGameActivity : AppCompatActivity() {
     private lateinit var surfaceView: PojavGameSurfaceView
     private lateinit var statusText: TextView
     private lateinit var closeButton: MaterialButton
+    private lateinit var gamePanel: LinearLayout
+    private lateinit var touchOverlay: GameTouchOverlay
     private lateinit var viewLogButton: MaterialButton
     private var launchStarted = false
     private var launchFinished = false
@@ -73,6 +76,16 @@ class PojavGameActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
+        // On-screen controls + touch gestures (Pojav-style): shown once the JVM is starting.
+        touchOverlay = GameTouchOverlay(this).apply {
+            visibility = View.GONE
+            optionsFile = File(File(filesDir, "minecraft"), "game/options.txt")
+        }
+        root.addView(touchOverlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        surfaceView.onGrabChanged = { grabbing -> touchOverlay.onGrabChanged(grabbing) }
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -122,6 +135,7 @@ class PojavGameActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.TOP,
         ))
+        gamePanel = panel
         setContentView(root)
         surfaceView.requestFocus()
     }
@@ -163,6 +177,9 @@ class PojavGameActivity : AppCompatActivity() {
 
         launchStarted = true
         closeButton.isEnabled = false
+        gamePanel.visibility = View.GONE
+        touchOverlay.visibility = View.VISIBLE
+        touchOverlay.onGrabChanged(org.lwjgl.glfw.CallbackBridge.isGrabbing)
         statusText.text = "Preparing Java ${version.id}, native library paths, and ${if (session.isLocalAccount) "local/offline" else "Microsoft-authenticated"} launch arguments…"
         launchExecutor.execute {
             val result = runCatching {
@@ -182,6 +199,9 @@ class PojavGameActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@post
                 launchFinished = true
                 closeButton.isEnabled = true
+                touchOverlay.onGrabChanged(false)
+                touchOverlay.visibility = View.GONE
+                gamePanel.visibility = View.VISIBLE
                 result.onSuccess { exitCode ->
                     statusText.text = "Minecraft Java ${version.id} exited with code $exitCode. Open View game log for captured output."
                 }.onFailure { error ->

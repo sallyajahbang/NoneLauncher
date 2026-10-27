@@ -28,6 +28,9 @@ public final class CallbackBridge {
     public static volatile int physicalWidth;
     public static volatile int physicalHeight;
     public static volatile boolean isGrabbing;
+    /** Shared virtual cursor position (Pojav keeps one mouseX/mouseY for touch, mouse and capture). */
+    public static volatile float mouseX;
+    public static volatile float mouseY;
     public static volatile boolean directGamepadInput;
     private static ByteBuffer gamepadButtons;
     private static ByteBuffer gamepadAxes;
@@ -107,7 +110,11 @@ public final class CallbackBridge {
         }
     }
 
-    public static void sendCursorPos(float x, float y) { nativeSendCursorPos(x, y); }
+    public static void sendCursorPos(float x, float y) {
+        mouseX = x;
+        mouseY = y;
+        nativeSendCursorPos(x, y);
+    }
     public static void sendMouseButton(int button, int action, int modifiers) { nativeSendMouseButton(button, action, modifiers); }
     public static void sendScroll(double x, double y) { nativeSendScroll(x, y); }
     public static void sendScreenSize(int width, int height) {

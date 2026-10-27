@@ -37,11 +37,16 @@ class PojavGameSurfaceView(
     @Volatile
     var onBridgeReady: (() -> Unit)? = null
 
+    /** Called on the main thread whenever the game grabs or releases the cursor. */
+    @Volatile
+    var onGrabChanged: ((Boolean) -> Unit)? = null
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
         holder.addCallback(this)
         CallbackBridge.setGrabStateListener { grabbing ->
+            onGrabChanged?.invoke(grabbing)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 post {
                     if (grabbing && hasWindowFocus()) requestPointerCapture()
@@ -56,9 +61,8 @@ class PojavGameSurfaceView(
                     val dx = event.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
                     val dy = event.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
                     if (dx == 0f && dy == 0f) return true
-                    pointerX = (pointerX + dx).coerceIn(0f, surfaceWidth.toFloat().coerceAtLeast(1f))
-                    pointerY = (pointerY + dy).coerceIn(0f, surfaceHeight.toFloat().coerceAtLeast(1f))
-                    CallbackBridge.sendCursorPos(pointerX, pointerY)
+                    // Grabbed mouse look must not be clamped: the game only uses position deltas.
+                    CallbackBridge.sendCursorPos(CallbackBridge.mouseX + dx, CallbackBridge.mouseY + dy)
                     return true
                 }
             })

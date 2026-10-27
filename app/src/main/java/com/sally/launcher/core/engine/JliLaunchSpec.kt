@@ -1,9 +1,13 @@
 package com.sally.launcher.core.engine
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import java.io.File
 import java.io.IOException
 import java.util.LinkedHashSet
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Immutable, shell-free description of a JLI_Launch invocation.
@@ -84,6 +88,7 @@ class JliLaunchSpecBuilder(context: Context) {
         if (vmArguments.none { it.startsWith("-Duser.home=") }) {
             vmArguments += "-Duser.home=${appContext.filesDir.canonicalPath}"
         }
+        addPojavRuntimeArguments(vmArguments, appNativeDir)
         ensureClasspath(vmArguments, profile.classpath)
 
         val argv = buildList {
@@ -96,6 +101,7 @@ class JliLaunchSpecBuilder(context: Context) {
             throw IOException("A native launch argument contains an invalid NUL character.")
         }
 
+        val (displayWidth, displayHeight) = GameDisplaySize.resolve(appContext)
         val env = linkedMapOf(
             "JAVA_HOME" to runtimeHome.absolutePath,
             "HOME" to appContext.filesDir.canonicalPath,
@@ -115,11 +121,12 @@ class JliLaunchSpecBuilder(context: Context) {
             "LIBGL_NORMALIZE" to "1",
             "FORCE_VSYNC" to "true",
             "MESA_GLSL_CACHE_DIR" to appContext.cacheDir.canonicalPath,
-            "AWTSTUB_WIDTH" to "854",
-            "AWTSTUB_HEIGHT" to "480",
+            "AWTSTUB_WIDTH" to displayWidth.toString(),
+            "AWTSTUB_HEIGHT" to displayHeight.toString(),
         )
         val ldLibraryPath = LinkedHashSet<String>().apply {
             addAll(allLibraryDirs.map { it.absolutePath })
+            addAll(systemLibraryDirectories())
             System.getenv("LD_LIBRARY_PATH")
                 ?.split(File.pathSeparator)
                 ?.filter { it.isNotBlank() }
@@ -145,6 +152,56 @@ class JliLaunchSpecBuilder(context: Context) {
             nativeLibraryDirectories = allLibraryDirs,
             blockers = blockers.distinct(),
         )
+    }
+
+    /** Same vendor/system linker directories upstream Pojav appends to LD_LIBRARY_PATH (GPU drivers, etc.). */
+    private fun systemLibraryDirectories(): List<String> =
+        if (android.os.Process.is64Bit()) listOf("/system/lib64", "/vendor/lib64", "/vendor/lib64/hw")
+        else listOf("/system/lib", "/vendor/lib", "/vendor/lib/hw")
+
+    /**
+     * Mirrors the default JVM arguments of upstream Pojav (JREUtils.getJavaArgs/launchJavaVM).
+     * Anything already set by the Mojang version JSON is left untouched.
+     */
+    private fun addPojavRuntimeArguments(args: MutableList<String>, appNativeDir: File?) {
+        fun hasProperty(name: String) = args.any { it == name || it.startsWith("$name=") }
+        fun addDefault(name: String, value: String) {
+            if (!hasProperty(name)) args += "$name=$value"
+        }
+
+        val (width, height) = GameDisplaySize.resolve(appContext)
+        addDefault("-Dos.name", "Linux")
+        addDefault("-Dos.version", "Android-${Build.VERSION.RELEASE}")
+        addDefault("-Duser.language", Locale.getDefault().language.ifBlank { "en" })
+        addDefault("-Duser.timezone", TimeZone.getDefault().id)
+        if (appNativeDir != null) addDefault("-Djna.boot.library.path", appNativeDir.absolutePath)
+        addDefault("-Dorg.lwjgl.vulkan.libname", "libvulkan.so")
+        // The patched GLFW stub reads the initial window size from these properties.
+        addDefault("-Dglfwstub.windowWidth", width.toString())
+        addDefault("-Dglfwstub.windowHeight", height.toString())
+        addDefault("-Dglfwstub.initEgl", "false")
+        addDefault("-Dlog4j2.formatMsgNoLookups", "true")
+        addDefault("-Dnet.minecraft.clientmodname", "SallyLauncher")
+        addDefault("-Dfml.earlyprogresswindow", "false")
+        addDefault("-Dloader.disable_forked_guis", "true")
+        // POSIX_SPAWN needs jspawnhelper, which does not work on Android.
+        addDefault("-Djdk.lang.Process.launchMechanism", "FORK")
+        if (appNativeDir != null) {
+            if (File(appNativeDir, PojavRuntimeLoader.GL4ES_LIBRARY).isFile) {
+                addDefault("-Dorg.lwjgl.opengl.libname", PojavRuntimeLoader.GL4ES_LIBRARY)
+            }
+            val freetype = File(appNativeDir, "libfreetype.so")
+            if (freetype.isFile) addDefault("-Dorg.lwjgl.freetype.libname", freetype.absolutePath)
+        }
+        addDefault("-XX:ActiveProcessorCount", Runtime.getRuntime().availableProcessors().toString())
+
+        val heapMb = runCatching {
+            val info = ActivityManager.MemoryInfo()
+            (appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(info)
+            (info.totalMem / (1024L * 1024L) * 35L / 100L).coerceIn(512L, 3072L)
+        }.getOrDefault(1024L)
+        if (args.none { it.startsWith("-Xmx") }) args += "-Xmx${heapMb}M"
+        if (args.none { it.startsWith("-Xms") }) args += "-Xms${heapMb}M"
     }
 
     private fun ensureClasspath(arguments: MutableList<String>, classpath: String) {

@@ -89,6 +89,10 @@ class PojavJliLaunchExecutor(context: Context) {
             throw IOException("Could not initialize the native JVM exit callback: ${error.message ?: error.javaClass.simpleName}", error)
         }
 
+        // Upstream Pojav (JREUtils.launchJavaVM) dlopen()s the renderer and the JRE's native
+        // libraries RTLD_GLOBAL before JLI_Launch so that LWJGL/AWT/NIO can resolve them.
+        PojavRuntimeLoader.preload(spec.runtimeHome, spec.environment["POJAV_NATIVEDIR"], linkerPath)
+
         // libpojavexec's Logger JNI endpoint redirects native/JVM stdout and stderr to a stable
         // file. Create it first because the native implementation truncates but does not create.
         val gameLog = MinecraftGameLog.beginCapture(appContext)
