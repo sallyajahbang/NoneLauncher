@@ -4,33 +4,59 @@
 package com.sally.nonelauncher.core.launcher
 
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-class DownloadException(message: String) : Exception(message)
+class DownloadException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /**
  * Mengunduh file ke disk dan memverifikasi SHA-1.
  * Dipanggil dari thread latar belakang (blocking). Jangan panggil dari main thread.
+ *
+ * Jaringan lambat atau tidak stabil sering menyebabkan timeout, jadi unduhan
+ * diulang beberapa kali dengan jeda yang makin panjang.
  */
 object Downloader {
+
+    private const val MAX_ATTEMPTS = 4
+    private const val CONNECT_TIMEOUT_MS = 30_000
+    private const val READ_TIMEOUT_MS = 90_000
 
     /** Unduh [download] ke [dest]. Dilewati jika file sudah ada dan hash-nya cocok. */
     fun fetch(download: Download, dest: File) {
         if (dest.isFile && (download.sha1.isEmpty() || sha1(dest).equals(download.sha1, ignoreCase = true))) {
             return
         }
+        var lastError: IOException? = null
+        for (attempt in 1..MAX_ATTEMPTS) {
+            try {
+                fetchOnce(download, dest)
+                return
+            } catch (e: IOException) {
+                lastError = e
+                if (attempt < MAX_ATTEMPTS) Thread.sleep(attempt * 2_000L)
+            }
+        }
+        throw DownloadException(
+            "Gagal setelah $MAX_ATTEMPTS percobaan (${lastError?.message ?: "error tidak diketahui"}): ${download.url}",
+            lastError,
+        )
+    }
+
+    private fun fetchOnce(download: Download, dest: File) {
         dest.parentFile?.mkdirs()
         val tmp = File(dest.parentFile, dest.name + ".part")
 
         val conn = (URL(download.url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
         }
         try {
             if (conn.responseCode !in 200..299) {
+                // Error HTTP dari server tidak diulang. Langsung gagal.
                 throw DownloadException("HTTP ${conn.responseCode} untuk ${download.url}")
             }
             conn.inputStream.use { input ->
