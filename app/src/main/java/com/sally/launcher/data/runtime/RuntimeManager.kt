@@ -214,7 +214,10 @@ class RuntimeManager(context: Context) {
 
     private fun resolveRuntimeAsset(major: Int, architecture: String): RuntimeAsset {
         val assetName = "jre$major-android-$architecture.tar.xz"
-        val apiUrl = "https://api.github.com/repos/AngelAuraMC/angelauramc-openjdk-build/releases/tags/download"
+        // Same release tag Amethyst downloads from (NewJREUtil.getJreSource): download_jre17, download_jre21, ...
+        // Previously this used the generic "download" tag. Amethyst runs Minecraft 1.20.1 on the runtime
+        // from download_jre<major>, so this matches it exactly.
+        val apiUrl = "https://api.github.com/repos/AngelAuraMC/angelauramc-openjdk-build/releases/tags/download_jre$major"
         val release = try {
             JSONObject(readHttpsText(apiUrl, "runtime release metadata", githubApi = true))
         } catch (e: Exception) {
