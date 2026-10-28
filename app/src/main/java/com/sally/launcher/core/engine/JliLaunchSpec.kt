@@ -73,12 +73,12 @@ class JliLaunchSpecBuilder(context: Context) {
         // natives directory. Replace/extend that property so System.loadLibrary can also find
         // APK-packaged Pojav LWJGL/GL4ES/OpenAL and the selected Android JRE's native libraries.
         val propertyIndex = vmArguments.indexOfFirst { it.startsWith("-Djava.library.path=") }
-        val existingNativePath = if (propertyIndex >= 0) {
-            vmArguments[propertyIndex].substringAfter('=').split(File.pathSeparator).filter { it.isNotBlank() }
-        } else emptyList()
+        // Same as upstream Pojav/Amethyst: java.library.path holds only the LWJGL natives and the
+        // APK native directory. Runtime lib directories and the version JSON's entries are left out;
+        // libawt is resolved through sun.boot.library.path, so it does not need to be listed here.
         val completeNativePath = LinkedHashSet<String>().apply {
-            addAll(allLibraryDirs.map { it.absolutePath })
-            addAll(existingNativePath)
+            if (nativesDirectory.isDirectory) add(nativesDirectory.absolutePath)
+            if (appNativeDir?.isDirectory == true) add(appNativeDir.absolutePath)
         }.joinToString(File.pathSeparator)
         val nativePathArgument = "-Djava.library.path=$completeNativePath"
         if (propertyIndex >= 0) vmArguments[propertyIndex] = nativePathArgument

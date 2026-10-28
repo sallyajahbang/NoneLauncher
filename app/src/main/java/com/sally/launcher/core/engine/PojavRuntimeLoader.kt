@@ -49,10 +49,19 @@ object PojavRuntimeLoader {
         if (!load("libjvm.so", jvmDir.absolutePath)) {
             throw IOException("Could not load libjvm.so from ${jvmDir.absolutePath}.")
         }
-        for (name in listOf(
-            "libverify.so", "libjava.so", "libnet.so", "libnio.so",
-            "libawt.so", "libawt_headless.so", "libfreetype.so", "libfontmanager.so",
-        )) load(name)
+        // The Android AWT shim must be resident before libawt.so. libawt declares libawt_xawt.so as a
+        // dependency; if the shim loads after libawt, libawt's dlopen fails and java.awt natives such as
+        // Font.initIDs are never registered, which crashes the Caciocavallo agent at JVM startup.
+        if (nativeLibraryDir != null) {
+            val shim = "$nativeLibraryDir/libawt_xawt.so"
+            if (!dlopen(shim)) throw IOException("Could not load the Android AWT shim libawt_xawt.so from $nativeLibraryDir.")
+        }
+        for (name in listOf("libverify.so", "libjava.so", "libnet.so", "libnio.so")) load(name)
+        if (!load("libawt.so")) {
+            throw IOException("Could not load libawt.so from the selected Java runtime; the AWT natives are required for Java 17 launches.")
+        }
+        load("libawt_headless.so")
+        for (name in listOf("libfreetype.so", "libfontmanager.so")) load(name)
 
         // 3. Everything else shipped with the JRE.
         for (library in locateLibraries(libDir)) dlopen(library.absolutePath)

@@ -20,6 +20,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -186,6 +191,27 @@ private fun LauncherContent(state: LauncherUiState, actions: LauncherActions, on
     }
 }
 
+// ---------------------------------------------------------------- Dialog helpers
+
+/** Keeps the status and navigation bars hidden inside dialog windows, which otherwise show them. */
+@Composable
+private fun DialogWindowEffect() {
+    val view = LocalView.current
+    SideEffect {
+        (view.parent as? DialogWindowProvider)?.window?.let { window ->
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+}
+
+/** Caps dialog body height and makes long content scrollable, so dialogs stay compact. */
+@Composable
+private fun dialogScrollModifier(): Modifier =
+    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())
+
 @Composable
 private fun LauncherAlert(dialog: LauncherDialog, actions: LauncherActions) {
     AlertDialog(
@@ -195,7 +221,8 @@ private fun LauncherAlert(dialog: LauncherDialog, actions: LauncherActions) {
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(dialog.title) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            DialogWindowEffect()
+            Column(dialogScrollModifier()) {
                 Text(dialog.message, style = MaterialTheme.typography.bodyMedium)
             }
         },
@@ -235,7 +262,8 @@ private fun AccountPickDialog(state: LauncherUiState, actions: LauncherActions) 
         textContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text("Pilih akun") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            DialogWindowEffect()
+            Column(dialogScrollModifier(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.microsoftAccount?.let { name ->
                     AccountRow(name = name, detail = "Microsoft", selected = true, onClick = close)
                 }
@@ -309,7 +337,8 @@ private fun AccountAddDialog(actions: LauncherActions) {
         textContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text("Tambah akun") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DialogWindowEffect()
+            Column(dialogScrollModifier(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "Pilih jenis akun yang akan ditambahkan.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -342,7 +371,8 @@ private fun OfflineNameDialog(actions: LauncherActions) {
         textContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text("Akun offline") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            DialogWindowEffect()
+            Column(dialogScrollModifier(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -828,7 +858,8 @@ private fun JavaDialog(state: LauncherUiState, actions: LauncherActions, onDismi
         textContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text("Runtime Java") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            DialogWindowEffect()
+            Column(dialogScrollModifier(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (javaBusy) {
                     TransferCard(status = state.runtimeStatus, done = state.transferDone, total = state.transferTotal)
                 } else {

@@ -38,6 +38,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -252,9 +257,26 @@ private fun LocalAccountsScreen(
         AlertDialog(
             onDismissRequest = onDismissDelete,
             title = { Text("Delete local account?") },
-            text = { Text("Remove ${account.username} from this launcher? This does not delete Minecraft worlds.") },
+            text = {
+                DialogWindowEffect()
+                Text("Remove ${account.username} from this launcher? This does not delete Minecraft worlds.")
+            },
             confirmButton = { TextButton(onClick = { onDeleteConfirm(account) }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = onDismissDelete) { Text("Cancel") } },
         )
+    }
+}
+
+/** Keeps the status and navigation bars hidden inside this dialog window, which otherwise shows them. */
+@Composable
+private fun DialogWindowEffect() {
+    val view = LocalView.current
+    SideEffect {
+        (view.parent as? DialogWindowProvider)?.window?.let { window ->
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
     }
 }
