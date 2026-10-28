@@ -3,6 +3,7 @@ package com.sally.nonelauncher
 import android.app.Activity
 import android.os.Build
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
 import android.widget.Button
@@ -18,6 +19,7 @@ import com.sally.nonelauncher.core.launch.GameBackend
 import com.sally.nonelauncher.core.model.RuntimeContext
 import com.sally.nonelauncher.core.mojang.VersionManifest
 import com.sally.nonelauncher.core.runtime.RuntimeInstaller
+import com.sally.nonelauncher.jvm.JvmProbe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -168,10 +170,8 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Step 2 of the JVM bridge: installs the runtime and checks that libjli.so loads.
-     *
-     * launchJVM is NOT called here. If the JVM starts successfully it exits the whole
-     * process when it finishes, which would close the app. The real launch comes next.
+     * Step 2 of the JVM bridge: installs the runtime, loads libjli.so, then runs the JVM
+     * with -version in a child process. The child exits without closing the app.
      */
     private fun testJvm() {
         scope.launch {
@@ -183,10 +183,41 @@ class MainActivity : Activity() {
                 val jli = File(home, "lib/libjli.so")
                 withContext(Dispatchers.IO) { System.load(jli.absolutePath) }
                 append("libjli.so berhasil dimuat.")
+                append("Menjalankan JVM -version di proses terpisah...")
+                runJvmProbe(File(home, "bin/java"), "-version")
             } catch (e: Throwable) {
                 append("Test JVM gagal: ${e.message}\n${e.stackTraceToString()}")
             }
         }
+    }
+
+    /**
+     * Runs the JVM in a child process and shows its output on screen.
+     * The child's exit does not close the app.
+     */
+    private suspend fun runJvmProbe(java: File, vararg jvmArgs: String) {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val readSide = pipe[0]
+        val writeSide = pipe[1]
+
+        val pid = withContext(Dispatchers.IO) {
+            JvmProbe.forkLaunch(arrayOf(java.absolutePath, *jvmArgs), writeSide.fd)
+        }
+        writeSide.close()
+        if (pid < 0) {
+            readSide.close()
+            append("fork gagal (kode $pid)")
+            return
+        }
+
+        val reader = scope.launch(Dispatchers.IO) {
+            ParcelFileDescriptor.AutoCloseInputStream(readSide).bufferedReader().useLines { lines ->
+                lines.forEach { append(it) }
+            }
+        }
+        val code = withContext(Dispatchers.IO) { JvmProbe.waitChild(pid) }
+        reader.join()
+        append("JVM selesai dengan kode: $code")
     }
 
     private fun append(line: String) {

@@ -193,3 +193,38 @@ JNIEXPORT jint JNICALL Java_com_oracle_dalvik_VMLauncher_launchJVM(JNIEnv *env, 
     LOG_TO_D("Free done");
     return res;
 }
+
+/*
+ * Added for None Launcher (not in the original file).
+ *
+ * The JVM exits the whole process when it finishes. To keep the app alive, the JVM
+ * runs in a forked child whose stdout/stderr go to a pipe owned by the caller.
+ */
+#include <sys/wait.h>
+
+JNIEXPORT jint JNICALL Java_com_sally_nonelauncher_jvm_JvmProbe_forkLaunch(JNIEnv *env, jclass clazz, jobjectArray argsArray, jint outFd) {
+    if (argsArray == NULL) return -1;
+
+    int argc = (*env)->GetArrayLength(env, argsArray);
+    char **argv = convert_to_char_array(env, argsArray);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child: send output to the pipe, then run the JVM. Exit code is the JVM's.
+        dup2(outFd, STDOUT_FILENO);
+        dup2(outFd, STDERR_FILENO);
+        int res = launchJVM(argc, argv);
+        fflush(NULL);
+        _exit(res & 0xff);
+    }
+
+    free_char_array(env, argsArray, (const char **) argv);
+    if (pid < 0) return -1;
+    return pid;
+}
+
+JNIEXPORT jint JNICALL Java_com_sally_nonelauncher_jvm_JvmProbe_waitChild(JNIEnv *env, jclass clazz, jint pid) {
+    int status = 0;
+    if (waitpid((pid_t) pid, &status, 0) < 0) return -1;
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}

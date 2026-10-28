@@ -23,5 +23,6 @@ provided implicitly):**
 - `stdio_is.c`: `#include <signal.h>`
 - `utils.c`: `#include <stdint.h>`
 - `environ/environ.h`: `#include <stdbool.h>`
+- `jre_launcher.c`: appended `Java_com_sally_nonelauncher_jvm_JvmProbe_forkLaunch` and `..._waitChild`, which run the JVM in a forked child so the app survives JVM exit. Written for None Launcher.
 
 Not copied yet: `exit_hook.c` (needs bytehook), renderers (`egl_bridge.c`, `ctxbridges/*.c` except `common.h`), and the other JNI modules.
