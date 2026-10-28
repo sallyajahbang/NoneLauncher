@@ -282,10 +282,14 @@ class JliLaunchSpecBuilder(context: Context) {
         } else {
             addDefault("-Dawt.toolkit", "com.github.caciocavallosilano.cacio.ctc.CTCToolkit")
             addDefault("-Djava.awt.graphicsenv", "com.github.caciocavallosilano.cacio.ctc.CTCGraphicsEnvironment")
-            // Amethyst uses the cacio-tta javaagent instead of the preload class loader,
-            // because the class loader breaks mod loaders.
+            // Only attach cacio-tta as a javaagent when the jar really declares a Premain-Class.
+            // The bundled cacio-tta jar is a plain toolkit library, so the JVM would fail with
+            // "Failed to find Premain-Class manifest attribute". It is still loaded through
+            // -Xbootclasspath/a below, which is what makes CTCToolkit visible to the JVM.
             val agent = cacioJars.firstOrNull { it.name.contains("cacio-tta") }
-            if (agent != null && args.none { it.startsWith("-javaagent:") && it.contains("cacio-tta") }) {
+            if (agent != null && hasPremainClass(agent) &&
+                args.none { it.startsWith("-javaagent:") && it.contains("cacio-tta") }
+            ) {
                 args += "-javaagent:" + agent.absolutePath
             }
 
@@ -324,6 +328,11 @@ class JliLaunchSpecBuilder(context: Context) {
             args += bootOption + cacioClasspath
         }
     }
+
+    /** True only if the jar's manifest declares a Premain-Class, i.e. it is a usable javaagent. */
+    private fun hasPremainClass(jar: File): Boolean = runCatching {
+        java.util.jar.JarFile(jar).use { it.manifest?.mainAttributes?.getValue("Premain-Class") != null }
+    }.getOrDefault(false)
 
     private fun ensureClasspath(arguments: MutableList<String>, classpath: String) {
         var index = 0
