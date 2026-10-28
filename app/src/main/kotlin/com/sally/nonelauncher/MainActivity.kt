@@ -45,11 +45,24 @@ class MainActivity : Activity() {
     }
     private val backend: GameBackend = AndroidGameBackend()
 
+    private val crashFile by lazy { File(filesDir, "last_crash.txt") }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Save any uncaught crash to a file, so the next start can show it on screen.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { crashFile.writeText(error.stackTraceToString()) }
+            previous?.uncaughtException(thread, error)
+        }
+
         log = TextView(this).apply {
             movementMethod = ScrollingMovementMethod()
+        }
+        if (crashFile.exists()) {
+            log.append("=== Crash sebelumnya ===\n" + crashFile.readText() + "\n")
+            crashFile.delete()
         }
         versionInput = EditText(this).apply { hint = "Versi, contoh 1.21.1"; setText("1.21.1") }
         nameInput = EditText(this).apply { hint = "Nama pemain (offline)"; setText("Player") }
@@ -90,8 +103,8 @@ class MainActivity : Activity() {
                     ?: throw IllegalArgumentException("versi $id tidak ditemukan")
                 withContext(Dispatchers.IO) { core.install(entry) }
                 append("Selesai install $id")
-            } catch (e: Exception) {
-                append("Install gagal: ${e.message}")
+            } catch (e: Throwable) {
+                append("Install gagal: ${e.message}\n${e.stackTraceToString()}")
             }
         }
     }
@@ -104,8 +117,8 @@ class MainActivity : Activity() {
                 val installed = withContext(Dispatchers.IO) { core.loadInstalled(id) }
                 val command = core.buildCommand(installed, OfflineAccount(name), instance = id)
                 withContext(Dispatchers.IO) { backend.start(command) }
-            } catch (e: Exception) {
-                append("Launch gagal: ${e.message}")
+            } catch (e: Throwable) {
+                append("Launch gagal: ${e.message}\n${e.stackTraceToString()}")
             }
         }
     }
