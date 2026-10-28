@@ -1,27 +1,29 @@
-name: Build Sally Launcher APK
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Buntuk
+
+name: Build
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: sally-launcher-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build debug APK
     runs-on: ubuntu-latest
-    env:
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      ANDROID_HOME: /usr/local/lib/android/sdk
+    timeout-minutes: 30
+
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -29,50 +31,40 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          # Explicit package IDs avoid the retired legacy `tools` package that made
-          # setup-android@v3 fail before Gradle could start.
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;26.3.11579264 cmake;3.22.1'
-
-      - name: Set up Gradle
+      - name: Set up Gradle 8.10
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Verify required Android SDK packages
-        shell: bash
+      - name: Build release APK (unsigned)
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APKs
         run: |
-          set -euo pipefail
-          test -d "$ANDROID_SDK_ROOT/platforms/android-35"
-          test -d "$ANDROID_SDK_ROOT/build-tools/35.0.0"
-          test -d "$ANDROID_SDK_ROOT/ndk/26.3.11579264"
-          test -d "$ANDROID_SDK_ROOT/cmake/3.22.1"
-          ./gradlew --version
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/ || true
+          cp app/build/outputs/apk/release/*.apk dist/ || true
+          ls -la dist
 
-      - name: Run input mapping, engine compatibility, and callback bridge unit tests
-        run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
-
-      - name: Build APK
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
-
-      - name: Upload build and test reports
-        if: always()
+      - name: Upload APKs as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sally-launcher-build-reports
-          path: app/build/reports/**
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sally-launcher-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: none-launcher-apk
+          path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Attach APKs to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
+          body: |
+            Source code tersedia di repositori ini di bawah GPL-3.0-only.
+            APK release belum ditandatangani. Tanda tangan dilakukan secara manual.

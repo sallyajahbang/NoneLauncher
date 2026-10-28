@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: GPL-3.0-only
+  Copyright (C) 2026 Buntuk
+-->
+<resources>
+    <style name="Theme.NoneLauncher" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>

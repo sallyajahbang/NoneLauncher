@@ -1,51 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: GPL-3.0-only
+  Copyright (C) 2026 Buntuk
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:allowBackup="false"
-        android:icon="@drawable/ic_launcher"
+        android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SallyLauncher"
-        android:usesCleartextTraffic="false">
-        <service
-            android:name=".core.engine.JliRuntimeSmokeService"
-            android:exported="false"
-            android:process=":jli_smoke" />
-        <activity
-            android:name=".core.engine.EngineDiagnosticsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:label="Engine diagnostics" />
-        <activity
-            android:name=".core.engine.PojavEngineDiagnosticsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:label="Pojav bridge diagnostics" />
-        <activity
-            android:name=".core.auth.MicrosoftLoginActivity"
-            android:exported="false"
-            android:screenOrientation="unspecified"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustResize"
-            android:label="Microsoft sign-in" />
-        <activity
-            android:name=".core.engine.PojavGameActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:label="Minecraft Java" />
+        android:theme="@style/Theme.NoneLauncher">
+
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
-            android:windowSoftInputMode="adjustResize">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
     </application>
+
 </manifest>

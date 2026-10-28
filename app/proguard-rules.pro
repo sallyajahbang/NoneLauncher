@@ -1,1 +1,4 @@
-# Sally Launcher rules will be added as runtime/engine components are integrated.
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Buntuk
+
+# Aturan ProGuard untuk None Launcher. Kosong untuk sekarang.
