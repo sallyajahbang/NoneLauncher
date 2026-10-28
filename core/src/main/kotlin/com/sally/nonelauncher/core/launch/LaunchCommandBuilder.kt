@@ -116,10 +116,18 @@ class LaunchCommandBuilder(
     }
 
     companion object {
-        private val VAR = Regex("\\$\\{([A-Za-z0-9_]+)}")
-
-        /** Replaces `${name}` with the value from [vars]; unknown names are left as-is. */
-        fun substitute(template: String, vars: Map<String, String>): String =
-            VAR.replace(template) { match -> vars[match.groupValues[1]] ?: match.value }
+        /**
+         * Replaces `${name}` with the value from [vars]; unknown names are left as-is.
+         *
+         * Plain string replacement on purpose: a regex here broke on Android's regex
+         * engine (PatternSyntaxException) and took down the whole launcher core.
+         */
+        fun substitute(template: String, vars: Map<String, String>): String {
+            var out = template
+            for ((key, value) in vars) {
+                out = out.replace("\${" + key + "}", value)
+            }
+            return out
+        }
     }
 }
