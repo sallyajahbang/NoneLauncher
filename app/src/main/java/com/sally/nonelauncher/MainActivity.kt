@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.sally.nonelauncher.core.launcher.LaunchOrchestrator
+import com.sally.nonelauncher.runtime.jre.JreDownloader
 import com.sally.nonelauncher.runtime.jre.LocalJavaRuntimeProvider
 import java.io.File
 
@@ -48,6 +49,18 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f))
         }
         setContentView(content)
+        startJreInstall()
+    }
+
+    /** Unduh JRE 8 di latar belakang saat app dibuka, jika belum ada. */
+    private fun startJreInstall() {
+        Thread {
+            try {
+                JreDownloader.ensureInstalled(8, runtimeDir()) { msg -> runOnUiThread { appendLog(msg) } }
+            } catch (e: Throwable) {
+                runOnUiThread { appendLog("JRE gagal: ${e.message ?: e.javaClass.simpleName}") }
+            }
+        }.start()
     }
 
     private fun startLaunch() {
@@ -63,7 +76,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             val orchestrator = LaunchOrchestrator(
                 root = filesDir,
-                javaProvider = LocalJavaRuntimeProvider(File(filesDir, "runtime")),
+                javaProvider = LocalJavaRuntimeProvider(javaRoots()),
                 log = { msg -> runOnUiThread { appendLog(msg) } },
             )
             try {
@@ -79,4 +92,14 @@ class MainActivity : AppCompatActivity() {
     private fun appendLog(msg: String) {
         logView.append(msg + "\n")
     }
+
+    /**
+     * Folder tempat JRE dicari. Folder eksternal bisa diisi lewat adb tanpa run-as:
+     * Android/data/com.sally.nonelauncher/files/runtime/java8
+     */
+    private fun javaRoots(): List<File> = listOf(runtimeDir(), File(filesDir, "runtime")).distinct()
+
+    /** Folder JRE di penyimpanan eksternal app. Bisa dilihat lewat file manager atau adb. */
+    private fun runtimeDir(): File =
+        getExternalFilesDir(null)?.let { File(it, "runtime") } ?: File(filesDir, "runtime")
 }
