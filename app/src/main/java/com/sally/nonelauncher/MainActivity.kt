@@ -5,6 +5,9 @@ package com.sally.nonelauncher
 
 import android.graphics.Typeface
 import android.os.Bundle
+import android.util.Log
+import android.view.Surface
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
 import android.widget.Button
@@ -18,6 +21,10 @@ import com.sally.nonelauncher.runtime.jre.LocalJavaRuntimeProvider
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "NoneLauncher"
+    }
 
     private lateinit var logView: TextView
     private lateinit var launchButton: Button
@@ -37,6 +44,17 @@ class MainActivity : AppCompatActivity() {
         }
         val logScroll = ScrollView(this).apply { addView(logView) }
         surfaceView = SurfaceView(this)
+        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                Log.i(TAG, "Surface dibuat")
+            }
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                Log.i(TAG, "Surface berubah ${width}x$height")
+            }
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                Log.i(TAG, "Surface dihancurkan")
+            }
+        })
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -64,8 +82,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startLaunch() {
-        val surface = surfaceView.holder.surface
-        if (!surface.isValid) {
+        // Ambil holder, bukan Surface-nya. Surface yang valid dicari ulang saat dibutuhkan.
+        val holder = surfaceView.holder
+        if (holder.surface?.isValid != true) {
             appendLog("Surface belum siap. Coba lagi sebentar.")
             return
         }
@@ -80,7 +99,11 @@ class MainActivity : AppCompatActivity() {
                 log = { msg -> runOnUiThread { appendLog(msg) } },
             )
             try {
-                orchestrator.launch(versionId = "1.16.5", username = "Player", surface = surface)
+                orchestrator.launch(
+                    versionId = "1.16.5",
+                    username = "Player",
+                    surfaceProvider = { currentSurface(holder) },
+                )
             } catch (e: Throwable) {
                 runOnUiThread { appendLog("GAGAL: ${e.message ?: e.javaClass.simpleName}") }
             } finally {
@@ -88,6 +111,10 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
+
+    /** Surface yang masih valid saat ini, atau null jika belum ada atau sudah dihancurkan. */
+    private fun currentSurface(holder: SurfaceHolder): Surface? =
+        holder.surface?.takeIf { it.isValid }
 
     private fun appendLog(msg: String) {
         logView.append(msg + "\n")

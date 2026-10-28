@@ -32,9 +32,15 @@ class LaunchOrchestrator(
     private val gameDir = File(root, "game")
 
     /**
-     * @param surface Surface untuk render. Jika null, EGL tidak dibuat dan JVM tetap dijalankan.
+     * @param surfaceProvider Dipanggil dua kali: di awal untuk cek cepat, dan tepat sebelum JVM
+     *   dijalankan. Surface diambil ulang karena unduhan bisa memakan waktu beberapa menit, selama
+     *   itu SurfaceView bisa menghancurkan surface lamanya. Mengembalikan null jika belum siap.
      */
-    fun launch(versionId: String, username: String, surface: Surface?): Int {
+    fun launch(versionId: String, username: String, surfaceProvider: () -> Surface?): Int {
+        if (surfaceProvider() == null) {
+            throw IllegalStateException("Surface belum siap. Tunggu layar render muncul lalu coba lagi.")
+        }
+
         log("Mengambil manifest versi...")
         val manifestFile = File(root, "cache/version_manifest_v2.json")
         manifestFile.delete() // selalu ambil manifest terbaru
@@ -94,6 +100,10 @@ class LaunchOrchestrator(
 
         log("Mengekstrak ${plan.nativeJars.size} native jar...")
         plan.nativeJars.forEach { extractNatives(it, nativesDir) }
+
+        // Ambil surface yang aktif sekarang, bukan yang diambil saat tombol ditekan.
+        val surface = surfaceProvider()
+            ?: throw IllegalStateException("Surface hilang saat unduhan. Buka lagi layar render lalu coba lagi.")
 
         log("Menjalankan ${plan.mainClass}...")
         val code = NativeJvm.run(
