@@ -46,4 +46,5 @@ dependencies {
     implementation(project(":core"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.annotation:annotation:1.9.1")
+    implementation("org.tukaani:xz:1.10")
 }

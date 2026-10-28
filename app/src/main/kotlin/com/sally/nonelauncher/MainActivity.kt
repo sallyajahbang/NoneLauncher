@@ -1,6 +1,7 @@
 package com.sally.nonelauncher
 
 import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
@@ -16,13 +17,14 @@ import com.sally.nonelauncher.core.download.Downloader
 import com.sally.nonelauncher.core.launch.GameBackend
 import com.sally.nonelauncher.core.model.RuntimeContext
 import com.sally.nonelauncher.core.mojang.VersionManifest
-import com.oracle.dalvik.VMLauncher
+import com.sally.nonelauncher.core.runtime.RuntimeInstaller
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.tukaani.xz.XZInputStream
 import java.io.File
 
 /**
@@ -30,6 +32,11 @@ import java.io.File
  * Layout is deliberately unstyled for now.
  */
 class MainActivity : Activity() {
+
+    companion object {
+        /** The only Java runtime bundled in the APK for now. */
+        private const val BUNDLED_JAVA = 21
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var log: TextView
@@ -111,6 +118,16 @@ class MainActivity : Activity() {
                 append("Selesai install $id")
             } catch (e: Throwable) {
                 append("Install gagal: ${e.message}\n${e.stackTraceToString()}")
+                return@launch
+            }
+
+            // Runtime is separate from the game files, so a missing runtime does not undo the install.
+            try {
+                val major = withContext(Dispatchers.IO) { core.loadInstalled(id).meta.javaMajorVersion }
+                val home = withContext(Dispatchers.IO) { ensureRuntime(major) }
+                append("Runtime Java $major siap: ${home.path}")
+            } catch (e: Throwable) {
+                append("Runtime gagal: ${e.message}")
             }
         }
     }
@@ -121,6 +138,7 @@ class MainActivity : Activity() {
         scope.launch {
             try {
                 val installed = withContext(Dispatchers.IO) { core.loadInstalled(id) }
+                withContext(Dispatchers.IO) { ensureRuntime(installed.meta.javaMajorVersion) }
                 val command = core.buildCommand(installed, OfflineAccount(name), instance = id)
                 withContext(Dispatchers.IO) { backend.start(command) }
             } catch (e: Throwable) {
@@ -130,19 +148,41 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Step 1 of the JVM bridge: only checks that the native library loads.
+     * Installs the bundled Java runtime for [major] if it is not present yet.
+     * Only [BUNDLED_JAVA] is available; other versions need their own bundle.
+     */
+    private fun ensureRuntime(major: Int): File {
+        require(major == BUNDLED_JAVA) {
+            "Java $major belum dibundel di aplikasi ini (baru Java $BUNDLED_JAVA)"
+        }
+        val abi = when (Build.SUPPORTED_ABIS.firstOrNull()) {
+            "arm64-v8a" -> "arm64"
+            "x86_64" -> "x86_64"
+            else -> throw IllegalStateException("arsitektur ${Build.SUPPORTED_ABIS.firstOrNull()} belum didukung")
+        }
+        val dir = "runtimes/java-$BUNDLED_JAVA"
+        val version = assets.open("$dir/version").bufferedReader().use { it.readText().trim() }
+        return RuntimeInstaller.install(major, version, core.paths) {
+            XZInputStream(assets.open("$dir/bin-$abi.tar.xz"))
+        }
+    }
+
+    /**
+     * Step 2 of the JVM bridge: installs the runtime and checks that libjli.so loads.
      *
-     * Do not call launchJVM with real arguments yet. Once a runtime is present,
-     * the JVM exits the whole process when it finishes, which would close the app.
-     * With no runtime installed, launchJVM returns -1 after logging why.
+     * launchJVM is NOT called here. If the JVM starts successfully it exits the whole
+     * process when it finishes, which would close the app. The real launch comes next.
      */
     private fun testJvm() {
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { System.loadLibrary("nonelauncher_jvm") }
                 append("Library native nonelauncher_jvm berhasil dimuat.")
-                val code = withContext(Dispatchers.IO) { VMLauncher.launchJVM(arrayOf("-version")) }
-                append("launchJVM kembali dengan kode: $code")
+                val home = withContext(Dispatchers.IO) { ensureRuntime(BUNDLED_JAVA) }
+                append("Runtime siap: ${home.path}")
+                val jli = File(home, "lib/libjli.so")
+                withContext(Dispatchers.IO) { System.load(jli.absolutePath) }
+                append("libjli.so berhasil dimuat.")
             } catch (e: Throwable) {
                 append("Test JVM gagal: ${e.message}\n${e.stackTraceToString()}")
             }

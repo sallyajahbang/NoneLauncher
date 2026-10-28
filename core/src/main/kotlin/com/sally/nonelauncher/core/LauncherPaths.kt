@@ -43,5 +43,8 @@ class LauncherPaths(val root: File) {
     fun assetObjectFile(hash: String): File =
         File(File(assetObjects, hash.substring(0, 2)), hash)
 
-    fun javaExecutable(major: Int): File = File(runtimes, "java-$major/bin/java")
+    /** Root of an installed Java runtime, e.g. runtime/java-21 (contains bin/ and lib/). */
+    fun runtimeHome(major: Int): File = File(runtimes, "java-$major")
+
+    fun javaExecutable(major: Int): File = File(runtimeHome(major), "bin/java")
 }
