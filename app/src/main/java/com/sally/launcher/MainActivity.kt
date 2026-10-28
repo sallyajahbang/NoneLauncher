@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity() {
             prepareProfile = ::prepareLaunchProfile,
             probeJvm = ::probeJvmBridge,
             testJvm = ::runJliRuntimeSmokeTest,
+            showLaunchArgs = ::showLaunchArgs,
             testGraphics = { startActivity(Intent(this, EngineDiagnosticsActivity::class.java)) },
             testPojav = { startActivity(Intent(this, PojavEngineDiagnosticsActivity::class.java)) },
             setThemeMode = ::setThemeMode,
@@ -483,7 +484,8 @@ class MainActivity : AppCompatActivity() {
                 updateState { copy(busyAction = null) }
                 result.onSuccess { (runtime, probe) ->
                     updateState { copy(engineStatus = if (probe.available) "JLI loader probe passed for ${runtime.displayName()} (library availability only)." else "JLI loader probe failed for ${runtime.displayName()}.") }
-                    showMessage(if (probe.available) "JVM native loader available" else "JVM native loader not ready", "Runtime: ${runtime.displayName()}\nPath: ${runtime.home.absolutePath}\n\n${probe.details}\n\nThis probe maps native libraries and checks JLI_Launch. It does not start Minecraft.")
+                    val debugText = "Runtime: ${runtime.displayName()}\nPath: ${runtime.home.absolutePath}\n\n${probe.details}\n\nThis probe maps native libraries and checks JLI_Launch. It does not start Minecraft."
+                    showDialog(LauncherDialog(title = if (probe.available) "JVM native loader available" else "JVM native loader not ready", message = debugText, copyText = debugText))
                 }.onFailure { error ->
                     updateState { copy(engineStatus = "JLI probe failed: ${error.message ?: "unknown error"}") }
                     showMessage("JVM bridge probe failed", error.message ?: "Could not inspect the installed runtime.")
@@ -491,6 +493,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun showLaunchArgs() {
+        val file = File(LauncherStorage.diagnosticsRoot(applicationContext), "last-launch-argv.txt")
+        val text = if (file.isFile) file.readText()
+        else "Belum ada launch yang tercatat. Jalankan Minecraft sekali, lalu buka lagi."
+        showDialog(LauncherDialog(title = "Argumen launch terakhir", message = text, copyText = text))
+    }
+
+    private fun logTail(path: String, maxChars: Int = 12_000): String =
+        runCatching {
+            val file = File(path)
+            if (!file.isFile) "(log belum ada: $path)" else file.readText().takeLast(maxChars)
+        }.getOrElse { "(gagal membaca log: ${it.message ?: it.javaClass.simpleName})" }
 
     private fun runJliRuntimeSmokeTest() {
         if (jvmSmokeReceiver != null) return
@@ -510,7 +525,15 @@ class MainActivity : AppCompatActivity() {
                         engineStatus = if (passed) "JVM startup test passed for $runtime. Minecraft rendering is not tested by this check." else "JVM startup test failed for $runtime. See the diagnostic log.",
                     )
                 }
-                showMessage(if (passed) "Java runtime test passed" else "Java runtime test failed", "Runtime: $runtime\n${if (runtimeHome.isBlank()) "" else "Path: $runtimeHome\n"}\n$details\n\nSaved diagnostic log: $logPath\n\nThe test uses JLI_Launch with -version in a disposable Android process. It does not start Minecraft.")
+                val debugText = buildString {
+                    append("Runtime: $runtime\n")
+                    if (runtimeHome.isNotBlank()) append("Path: $runtimeHome\n")
+                    append("\n$details\n\nSaved diagnostic log: $logPath\n")
+                    append("\n--- akhir log ---\n")
+                    append(logTail(logPath))
+                    append("\n\nThe test uses JLI_Launch with -version in a disposable Android process. It does not start Minecraft.")
+                }
+                showDialog(LauncherDialog(title = if (passed) "Java runtime test passed" else "Java runtime test failed", message = debugText, copyText = debugText))
             }
         }
         jvmSmokeReceiver = receiver

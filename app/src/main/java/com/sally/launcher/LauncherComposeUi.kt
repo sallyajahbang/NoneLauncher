@@ -20,7 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -53,6 +56,8 @@ internal enum class AccountStep { NONE, PICK, ADD, OFFLINE_NAME }
 internal data class LauncherDialog(
     val title: String,
     val message: String,
+    /** When set, the dialog offers a Salin button that copies this full text, for sharing debug output. */
+    val copyText: String? = null,
     val confirmText: String = "OK",
     val onConfirm: (() -> Unit)? = null,
     val dismissText: String? = null,
@@ -116,6 +121,7 @@ internal data class LauncherActions(
     val prepareProfile: () -> Unit,
     val probeJvm: () -> Unit,
     val testJvm: () -> Unit,
+    val showLaunchArgs: () -> Unit,
     val testGraphics: () -> Unit,
     val testPojav: () -> Unit,
     val setThemeMode: (ThemeMode) -> Unit,
@@ -214,6 +220,7 @@ private fun dialogScrollModifier(): Modifier =
 
 @Composable
 private fun LauncherAlert(dialog: LauncherDialog, actions: LauncherActions) {
+    val clipboard = LocalClipboardManager.current
     AlertDialog(
         onDismissRequest = actions.dismissDialog,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -223,11 +230,17 @@ private fun LauncherAlert(dialog: LauncherDialog, actions: LauncherActions) {
         text = {
             DialogWindowEffect()
             Column(dialogScrollModifier()) {
-                Text(dialog.message, style = MaterialTheme.typography.bodyMedium)
+                SelectionContainer {
+                    Text(dialog.message, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         },
         confirmButton = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                val copy = dialog.copyText
+                if (copy != null) {
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(copy)) }) { Text("Salin") }
+                }
                 if (dialog.dismissText != null) {
                     TextButton(onClick = { actions.dismissDialog(); dialog.onDismiss?.invoke() }) { Text(dialog.dismissText) }
                 }
@@ -798,16 +811,28 @@ private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions, onO
         }
         if (state.developerMode) {
             item {
-                SettingsGroup("Developer") {
-                    DevRow("Siapkan profil launch", "Cek metadata, classpath, runtime, akun, dan penghalang.", "prepare", state.busyAction, actions.prepareProfile)
-                    DevRow("Probe loader JVM", "Cek libjli dan libjvm. Tidak menjalankan Minecraft.", "probe", state.busyAction, actions.probeJvm)
-                    DevRow("Tes runtime Java", "Jalankan proses JLI sekali pakai dengan -version.", "smoke", state.busyAction, actions.testJvm)
-                    DevRow("Tes grafis & input", "Buka permukaan diagnostik GLES dan input.", null, state.busyAction, actions.testGraphics)
-                    DevRow("Tes jembatan Pojav", "Buka diagnostik jembatan surface / JNI.", null, state.busyAction, actions.testPojav)
+                SettingsGroup(DeveloperOptionsText.GROUP_TITLE) {
+                    val devCallbacks = mapOf(
+                        "prepare" to actions.prepareProfile,
+                        "probe" to actions.probeJvm,
+                        "smoke" to actions.testJvm,
+                        "graphics" to actions.testGraphics,
+                        "argv" to actions.showLaunchArgs,
+                        "pojav" to actions.testPojav,
+                    )
+                    DeveloperOptionsText.actions.forEach { action ->
+                        DevRow(
+                            title = action.title,
+                            description = action.description,
+                            busyKey = action.busyKey,
+                            busyAction = state.busyAction,
+                            onClick = devCallbacks.getValue(action.id),
+                        )
+                    }
                     TextButton(
                         onClick = { actions.requestDeveloperMode(false) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) { Text("Matikan mode developer") }
+                    ) { Text(DeveloperOptionsText.DISABLE_LABEL) }
                 }
             }
         }
@@ -828,7 +853,7 @@ private fun SettingsScreen(state: LauncherUiState, actions: LauncherActions, onO
                 ) {
                     Text("Sally Launcher 0.1.0", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Ketuk 7 kali untuk mode developer.",
+                        DeveloperOptionsText.ENABLE_HINT,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

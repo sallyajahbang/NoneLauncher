@@ -282,16 +282,11 @@ class JliLaunchSpecBuilder(context: Context) {
         } else {
             addDefault("-Dawt.toolkit", "com.github.caciocavallosilano.cacio.ctc.CTCToolkit")
             addDefault("-Djava.awt.graphicsenv", "com.github.caciocavallosilano.cacio.ctc.CTCGraphicsEnvironment")
-            // Only attach cacio-tta as a javaagent when the jar really declares a Premain-Class.
-            // The bundled cacio-tta jar is a plain toolkit library, so the JVM would fail with
-            // "Failed to find Premain-Class manifest attribute". It is still loaded through
-            // -Xbootclasspath/a below, which is what makes CTCToolkit visible to the JVM.
-            val agent = cacioJars.firstOrNull { it.name.contains("cacio-tta") }
-            if (agent != null && hasPremainClass(agent) &&
-                args.none { it.startsWith("-javaagent:") && it.contains("cacio-tta") }
-            ) {
-                args += "-javaagent:" + agent.absolutePath
-            }
+            // The cacio-tta javaagent is intentionally NOT attached. Its premain eagerly builds
+            // CTCToolkit, which needs java.awt.Font natives and crashed on Java 17 before the game
+            // started (UnsatisfiedLinkError: Font.initIDs). The toolkit, graphics environment and
+            // font manager are selected by the -D properties above and below, lazily, which is the
+            // same path the Java 8 launch already uses.
 
             val moduleArguments = listOf(
                 "--add-exports=java.desktop/java.awt=ALL-UNNAMED",
@@ -328,11 +323,6 @@ class JliLaunchSpecBuilder(context: Context) {
             args += bootOption + cacioClasspath
         }
     }
-
-    /** True only if the jar's manifest declares a Premain-Class, i.e. it is a usable javaagent. */
-    private fun hasPremainClass(jar: File): Boolean = runCatching {
-        java.util.jar.JarFile(jar).use { it.manifest?.mainAttributes?.getValue("Premain-Class") != null }
-    }.getOrDefault(false)
 
     private fun ensureClasspath(arguments: MutableList<String>, classpath: String) {
         var index = 0

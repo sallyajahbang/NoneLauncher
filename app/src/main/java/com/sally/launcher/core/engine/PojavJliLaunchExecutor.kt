@@ -124,12 +124,42 @@ class PojavJliLaunchExecutor(context: Context) {
             throw IOException("The native bridge could not change to the Minecraft game directory.")
         }
 
+        // Record the exact argv for diagnostics, with session tokens masked, so a crash can be matched
+        // to the arguments that were really sent (for example a stray -javaagent).
+        runCatching { writeLaunchArgvRecord(spec.argv) }
+
         // Never log argv or the session: the access token is part of Minecraft's game arguments.
         return try {
             VMLauncher.launchJVM(spec.argv.toTypedArray())
         } catch (error: Throwable) {
             throw IOException("The embedded Java launcher failed before returning an exit code: ${error.message ?: error.javaClass.simpleName}", error)
         }
+    }
+
+    private fun writeLaunchArgvRecord(argv: List<String>) {
+        val masked = argv.mapIndexed { index, arg ->
+            val previous = argv.getOrNull(index - 1)
+            when {
+                previous == "--accessToken" || previous == "--session" -> "<redacted>"
+                arg.contains("accessToken=", ignoreCase = true) -> arg.substringBefore('=') + "=<redacted>"
+                else -> arg
+            }
+        }
+        val build = runCatching {
+            @Suppress("DEPRECATION")
+            val info = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+            "versionName=${info.versionName} lastUpdateTime=${info.lastUpdateTime}"
+        }.getOrDefault("unknown build")
+        val javaAgents = masked.filter { it.startsWith("-javaagent") }
+        val body = buildString {
+            append("build: ").append(build).append('\n')
+            append("javaagent entries: ").append(if (javaAgents.isEmpty()) "none" else javaAgents.joinToString(", ")).append('\n')
+            append("argv count: ").append(masked.size).append('\n')
+            masked.forEachIndexed { index, arg -> append(index).append(": ").append(arg).append('\n') }
+        }
+        val file = java.io.File(LauncherStorage.diagnosticsRoot(appContext), "last-launch-argv.txt")
+        file.parentFile?.mkdirs()
+        file.writeText(body)
     }
 
     private companion object {
