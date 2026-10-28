@@ -47,6 +47,8 @@ class LaunchOrchestrator(
         Downloader.fetch(Download(versionUrl, "", 0), jsonFile)
         val version = VersionJsonParser.parse(jsonFile.readText())
         log("Versi ${version.id}, main class ${version.mainClass}")
+        val glfwLib = version.libraries.firstOrNull { it.name.startsWith("org.lwjgl:lwjgl-glfw:") }?.name
+        log("LWJGL GLFW: ${glfwLib ?: "tidak ditemukan"}")
 
         log("Mengunduh client.jar...")
         val clientJar = File(versionDir, "$versionId.jar")
