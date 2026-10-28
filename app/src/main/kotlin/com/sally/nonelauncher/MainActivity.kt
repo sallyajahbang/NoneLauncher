@@ -16,6 +16,7 @@ import com.sally.nonelauncher.core.download.Downloader
 import com.sally.nonelauncher.core.launch.GameBackend
 import com.sally.nonelauncher.core.model.RuntimeContext
 import com.sally.nonelauncher.core.mojang.VersionManifest
+import com.oracle.dalvik.VMLauncher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,6 +76,10 @@ class MainActivity : Activity() {
             text = "Launch"
             setOnClickListener { launch() }
         }
+        val testJvmBtn = Button(this).apply {
+            text = "Test JVM"
+            setOnClickListener { testJvm() }
+        }
 
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -83,6 +88,7 @@ class MainActivity : Activity() {
             addView(nameInput)
             addView(installBtn)
             addView(launchBtn)
+            addView(testJvmBtn)
             addView(ScrollView(this@MainActivity).apply { addView(log) })
         }
         setContentView(column)
@@ -119,6 +125,26 @@ class MainActivity : Activity() {
                 withContext(Dispatchers.IO) { backend.start(command) }
             } catch (e: Throwable) {
                 append("Launch gagal: ${e.message}\n${e.stackTraceToString()}")
+            }
+        }
+    }
+
+    /**
+     * Step 1 of the JVM bridge: only checks that the native library loads.
+     *
+     * Do not call launchJVM with real arguments yet. Once a runtime is present,
+     * the JVM exits the whole process when it finishes, which would close the app.
+     * With no runtime installed, launchJVM returns -1 after logging why.
+     */
+    private fun testJvm() {
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { System.loadLibrary("nonelauncher_jvm") }
+                append("Library native nonelauncher_jvm berhasil dimuat.")
+                val code = withContext(Dispatchers.IO) { VMLauncher.launchJVM(arrayOf("-version")) }
+                append("launchJVM kembali dengan kode: $code")
+            } catch (e: Throwable) {
+                append("Test JVM gagal: ${e.message}\n${e.stackTraceToString()}")
             }
         }
     }
