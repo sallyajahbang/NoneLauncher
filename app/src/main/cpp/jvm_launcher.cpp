@@ -9,6 +9,12 @@
 
 #include <jni.h>
 #include <dlfcn.h>
+
+// Beberapa versi NDK tidak mendefinisikan JNI_VERSION_1_8 di jni.h.
+#ifndef JNI_VERSION_1_8
+#define JNI_VERSION_1_8 0x00010008
+#endif
+
 #include <android/log.h>
 
 #include <string>
