@@ -3,6 +3,7 @@
 
 package com.sally.nonelauncher.core.launcher
 
+import android.view.Surface
 import com.sally.nonelauncher.runtime.jre.JavaRuntimeProvider
 import com.sally.nonelauncher.runtime.jre.JavaVersionPolicy
 import com.sally.nonelauncher.runtime.jvm.NativeJvm
@@ -30,7 +31,10 @@ class LaunchOrchestrator(
     private val nativesRoot = File(root, "natives")
     private val gameDir = File(root, "game")
 
-    fun launch(versionId: String, username: String): Int {
+    /**
+     * @param surface Surface untuk render. Jika null, EGL tidak dibuat dan JVM tetap dijalankan.
+     */
+    fun launch(versionId: String, username: String, surface: Surface?): Int {
         log("Mengambil manifest versi...")
         val manifestFile = File(root, "cache/version_manifest_v2.json")
         manifestFile.delete() // selalu ambil manifest terbaru
@@ -95,6 +99,7 @@ class LaunchOrchestrator(
             NativeJvm.toJvmOptions(plan),
             plan.mainClass,
             plan.gameArgs.toTypedArray(),
+            surface,
         )
         log("JVM selesai dengan kode $code")
         return code

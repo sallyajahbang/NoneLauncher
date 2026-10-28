@@ -5,6 +5,8 @@
 // di dalam proses app. Android tidak bisa mengeksekusi binary `java` begitu saja,
 // jadi JVM dibuat lewat JNI_CreateJavaVM.
 //
+// EGL dibuat di thread yang sama dengan JVM, karena context GL terikat ke thread.
+//
 // Panggil dari thread latar belakang. Fungsi ini memblokir sampai main() selesai.
 
 #include <jni.h>
@@ -19,6 +21,8 @@
 
 #include <string>
 #include <vector>
+
+#include "egl_bridge.h"
 
 #define TAG "NoneJvm"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -55,7 +59,8 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_sally_nonelauncher_runtime_jvm_NativeJvm_run(
         JNIEnv *env, jclass,
         jstring jLibjvm, jobjectArray jOptions,
-        jstring jMainClass, jobjectArray jArgs) {
+        jstring jMainClass, jobjectArray jArgs,
+        jobject jSurface) {
 
     // Ambil semua string dulu, selagi env dari pemanggil masih aktif.
     const std::string libjvm = toStd(env, jLibjvm);
@@ -65,6 +70,12 @@ Java_com_sally_nonelauncher_runtime_jvm_NativeJvm_run(
 
     for (auto &ch : mainName) {
         if (ch == '.') ch = '/';
+    }
+
+    // EGL harus current di thread ini sebelum main() dipanggil.
+    if (jSurface != nullptr && !egl_bridge_setup(env, jSurface)) {
+        LOGE("Setup EGL gagal, JVM tidak dijalankan");
+        return -7;
     }
 
     void *handle = dlopen(libjvm.c_str(), RTLD_NOW | RTLD_GLOBAL);

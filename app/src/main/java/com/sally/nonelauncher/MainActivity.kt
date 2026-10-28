@@ -5,6 +5,7 @@ package com.sally.nonelauncher
 
 import android.graphics.Typeface
 import android.os.Bundle
+import android.view.SurfaceView
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
@@ -19,6 +20,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var logView: TextView
     private lateinit var launchButton: Button
+    private lateinit var surfaceView: SurfaceView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,6 +35,7 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.MONOSPACE
         }
         val logScroll = ScrollView(this).apply { addView(logView) }
+        surfaceView = SurfaceView(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -41,11 +44,19 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(logScroll, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(surfaceView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f))
         }
         setContentView(content)
     }
 
     private fun startLaunch() {
+        val surface = surfaceView.holder.surface
+        if (!surface.isValid) {
+            appendLog("Surface belum siap. Coba lagi sebentar.")
+            return
+        }
+
         launchButton.isEnabled = false
         logView.text = ""
 
@@ -56,7 +67,7 @@ class MainActivity : AppCompatActivity() {
                 log = { msg -> runOnUiThread { appendLog(msg) } },
             )
             try {
-                orchestrator.launch(versionId = "1.16.5", username = "Player")
+                orchestrator.launch(versionId = "1.16.5", username = "Player", surface = surface)
             } catch (e: Throwable) {
                 runOnUiThread { appendLog("GAGAL: ${e.message ?: e.javaClass.simpleName}") }
             } finally {

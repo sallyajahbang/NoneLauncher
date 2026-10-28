@@ -10,5 +10,5 @@ set(ANDROID ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/gl4es
                  ${CMAKE_CURRENT_BINARY_DIR}/gl4es)
 
-add_library(nonelauncher_jvm SHARED jvm_launcher.cpp)
-target_link_libraries(nonelauncher_jvm log dl)
+add_library(nonelauncher_jvm SHARED jvm_launcher.cpp egl_bridge.cpp)
+target_link_libraries(nonelauncher_jvm EGL android log dl)
