@@ -97,9 +97,11 @@ class MainActivity : AppCompatActivity() {
      * Folder tempat JRE dicari. Folder eksternal bisa diisi lewat adb tanpa run-as:
      * Android/data/com.sally.nonelauncher/files/runtime/java8
      */
-    private fun javaRoots(): List<File> = listOf(runtimeDir(), File(filesDir, "runtime")).distinct()
+    private fun javaRoots(): List<File> = listOf(runtimeDir())
 
-    /** Folder JRE di penyimpanan eksternal app. Bisa dilihat lewat file manager atau adb. */
-    private fun runtimeDir(): File =
-        getExternalFilesDir(null)?.let { File(it, "runtime") } ?: File(filesDir, "runtime")
+    /**
+     * Folder JRE di penyimpanan internal app. Penyimpanan eksternal tidak mendukung symlink
+     * dan tidak selalu bisa mengeksekusi file, jadi JRE tidak ditaruh di sana.
+     */
+    private fun runtimeDir(): File = File(filesDir, "runtime")
 }
