@@ -23,8 +23,8 @@ data class JavaRuntime(
  * dan mengekstraknya ke folder aplikasi. Lihat README bagian "Sumber JRE".
  */
 interface JavaRuntimeProvider {
-    /** Mengembalikan JRE untuk [majorVersion], memasangnya dulu jika belum ada. */
-    suspend fun resolve(majorVersion: Int): JavaRuntime
+    /** Mengembalikan JRE untuk [majorVersion]. Harus dipanggil dari thread latar belakang. */
+    fun resolve(majorVersion: Int): JavaRuntime
 }
 
 /**
