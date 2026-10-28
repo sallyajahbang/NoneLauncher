@@ -1,31 +1,54 @@
 # None Launcher
 
-Launcher Minecraft Java untuk Android, ditulis dari awal.
+Launcher Minecraft: Java Edition untuk Android, ditulis dari awal dengan Kotlin.
 
-- Package: `com.sally.nonelauncher`
-- Lisensi: GPL-3.0-only (lihat [LICENSE](LICENSE))
-- Target awal: Android 8.0+ (minSdk 26), arm64-v8a
+> **Status: tahap awal.** Fondasi logika sudah ada dan teruji (metadata versi,
+> download dengan verifikasi SHA-1, aturan platform, ekstraksi native, akun offline,
+> pembentukan argumen JVM). Menjalankan game di Android **belum** berfungsi karena
+> bridge JVM/renderer native belum di-port. UI masih polos sengaja.
 
-## Status
+## Yang sudah ada
 
-Kerangka proyek saja. Belum ada fungsi launcher. Milestone pertama adalah menjalankan Minecraft 1.16.5 sampai layar title muncul, tanpa autentikasi dan tanpa mod loader.
+| Modul | Isi |
+|---|---|
+| `core/` | Modul Kotlin/JVM murni: manifest & metadata versi Mojang, resolver library + native, downloader paralel dengan retry dan SHA-1, installer (client, library, native, aset), akun offline, pembentuk perintah launch. Ada unit test dan test end-to-end terhadap HTTP server lokal. |
+| `app/` | Aplikasi Android minimal: pilih versi, install, launch. `AndroidGameBackend` masih stub. |
+
+## Yang belum ada
+
+- Bridge JVM native Android (JNI + renderer GL/Vulkan). Ini bagian terberat dan akan di-port dari referensi di bawah.
+- Login Microsoft (saat ini hanya akun offline).
+- Manajemen Java runtime (struktur path sudah disiapkan di `LauncherPaths`).
+- Mod loader (Fabric, Forge, NeoForge, Quilt) dan modpack.
+- Desain UI.
 
 ## Build
 
-Build dijalankan otomatis di GitHub Actions (`.github/workflows/build.yml`) pada setiap push ke `main`, pull request, atau tag `v*`. APK hasil build tersedia di tab Actions sebagai artifact `none-launcher-apk`. Untuk tag `v*`, APK juga dilampirkan ke GitHub Release.
-
-Build lokal:
+Prasyarat: JDK 21, Android SDK (untuk modul `app`).
 
 ```bash
-gradle :app:assembleDebug
+./gradlew :core:test          # unit test core
+./gradlew :app:assembleDebug  # APK debug
 ```
 
-Membutuhkan JDK 17, Android SDK (platform 34), dan Gradle 8.10.
+CI ada di `.github/workflows/build.yml`: menjalankan test core lalu membangun APK debug dan mengunggahnya sebagai artifact.
 
 ## Lisensi
 
-Copyright (C) 2026 Buntuk
+Proyek ini dilisensikan di bawah **GNU General Public License v3.0** (lihat [LICENSE](LICENSE)),
+sama dengan proyek referensi yang dijelaskan di bawah.
 
-Program ini adalah perangkat lunak bebas: Anda dapat mendistribusikan dan/atau memodifikasinya di bawah ketentuan GNU General Public License versi 3, sebagaimana diterbitkan oleh Free Software Foundation. Program ini didistribusikan tanpa jaminan apa pun. Lihat [LICENSE](LICENSE) untuk teks lengkap.
+## Kredit dan referensi
 
-Aset dan JAR Minecraft tidak termasuk dalam repositori ini dan tidak didistribusikan ulang. Launcher hanya mengunduh file dari server Mojang.
+- **[ZalithLauncher2](https://github.com/ZalithLauncher/ZalithLauncher2)** (GPL-3.0), oleh tim ZalithLauncher.
+  Dijadikan rujukan untuk struktur launcher Android dan untuk bridge JNI yang
+  akan di-port dari `ZalithLauncher/src/main/jni/` dan `ZalithLauncher/src/main/java/com/movtery/zalithlauncher/bridge/`.
+  Saat ini kode di repo ini ditulis ulang dari awal; belum ada kode yang disalin dari ZalithLauncher2.
+- **[PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher)**, sumber asli bridge JVM Android
+  yang dipakai ZalithLauncher2.
+- **Mojang / Minecraft**: metadata versi dan aset diambil dari layanan publik Mojang
+  (`piston-meta.mojang.com`, `resources.download.minecraft.net`). Minecraft adalah merek dagang Mojang Studios;
+  proyek ini tidak berafiliasi dengan Mojang atau Microsoft.
+
+Jika nanti kode dari ZalithLauncher2 atau PojavLauncher disalin, berkas itu harus tetap
+menyertakan header lisensi dan atribusi aslinya.

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Buntuk
-
 pluginManagement {
     repositories {
         google()
@@ -17,5 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "None-Launcher"
+rootProject.name = "NoneLauncher"
+
+include(":core")
 include(":app")

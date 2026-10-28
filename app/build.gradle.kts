@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 Buntuk
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,35 +5,19 @@ plugins {
 
 android {
     namespace = "com.sally.nonelauncher"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.sally.nonelauncher"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-
-        // Milestone awal: hanya arm64. Tambah ABI lain nanti jika dibutuhkan.
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
         }
     }
 
@@ -51,9 +32,6 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    // Untuk mengekstrak JRE .tar.xz (Apache-2.0 dan Public Domain).
-    implementation("org.apache.commons:commons-compress:1.26.1")
-    implementation("org.tukaani:xz:1.9")
+    implementation(project(":core"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
