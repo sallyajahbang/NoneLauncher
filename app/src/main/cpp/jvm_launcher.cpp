@@ -55,6 +55,12 @@ std::vector<std::string> toStdVector(JNIEnv *env, jobjectArray arr) {
 
 }  // namespace
 
+// Pesan error EGL terakhir, supaya bisa ditampilkan di layar.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_sally_nonelauncher_runtime_jvm_NativeJvm_lastEglError(JNIEnv *env, jclass) {
+    return env->NewStringUTF(egl_bridge_last_error().c_str());
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_com_sally_nonelauncher_runtime_jvm_NativeJvm_run(
         JNIEnv *env, jclass,

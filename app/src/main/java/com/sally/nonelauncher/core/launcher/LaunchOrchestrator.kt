@@ -103,6 +103,9 @@ class LaunchOrchestrator(
             plan.gameArgs.toTypedArray(),
             surface,
         )
+        if (code == NativeJvm.CODE_EGL_FAILED) {
+            log("Setup EGL gagal: ${NativeJvm.lastEglError()}")
+        }
         log("JVM selesai dengan kode $code")
         return code
     }

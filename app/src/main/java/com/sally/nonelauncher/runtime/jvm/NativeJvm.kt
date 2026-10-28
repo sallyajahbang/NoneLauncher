@@ -13,6 +13,9 @@ import java.io.File
  */
 object NativeJvm {
 
+    /** Kode kembali dari [run] jika setup EGL gagal. */
+    const val CODE_EGL_FAILED = -7
+
     init {
         System.loadLibrary("nonelauncher_jvm")
     }
@@ -25,7 +28,7 @@ object NativeJvm {
      * @return 0 jika berhasil. Nilai negatif jika gagal:
      *   -1 dlopen, -2 JNI_CreateJavaVM tidak ada, -3 JNI_CreateJavaVM gagal,
      *   -4 kelas main tidak ada, -5 method main tidak ada, -6 exception di main,
-     *   -7 setup EGL gagal.
+     *   -7 setup EGL gagal (lihat [lastEglError]).
      */
     @JvmStatic
     external fun run(
@@ -35,6 +38,10 @@ object NativeJvm {
         args: Array<String>,
         surface: Surface?,
     ): Int
+
+    /** Pesan error EGL terakhir, kosong jika belum ada error. */
+    @JvmStatic
+    external fun lastEglError(): String
 
     /**
      * Mencari libjvm.so di dalam folder JRE. Lokasinya berbeda antar build,

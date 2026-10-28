@@ -8,6 +8,9 @@
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 
+#include <cstdio>
+#include <string>
+
 #define TAG "NoneEgl"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -17,20 +20,35 @@ EGLDisplay gDisplay = EGL_NO_DISPLAY;
 EGLSurface gSurface = EGL_NO_SURFACE;
 EGLContext gContext = EGL_NO_CONTEXT;
 ANativeWindow *gWindow = nullptr;
+std::string gLastError;
+
+// Mencatat langkah yang gagal beserta kode error EGL-nya, lalu mengembalikan false.
+bool fail(const char *step) {
+    char buf[200];
+    std::snprintf(buf, sizeof buf, "%s (EGL 0x%x)", step, eglGetError());
+    gLastError = buf;
+    LOGE("%s", buf);
+    return false;
+}
 }  // namespace
 
+std::string egl_bridge_last_error() {
+    return gLastError;
+}
+
 bool egl_bridge_setup(JNIEnv *env, jobject surface) {
+    gLastError.clear();
+
     gWindow = ANativeWindow_fromSurface(env, surface);
     if (gWindow == nullptr) {
-        LOGE("ANativeWindow_fromSurface gagal");
+        gLastError = "ANativeWindow_fromSurface gagal";
+        LOGE("%s", gLastError.c_str());
         return false;
     }
 
     gDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (gDisplay == EGL_NO_DISPLAY || !eglInitialize(gDisplay, nullptr, nullptr)) {
-        LOGE("eglInitialize gagal: 0x%x", eglGetError());
-        return false;
-    }
+    if (gDisplay == EGL_NO_DISPLAY) return fail("eglGetDisplay gagal");
+    if (!eglInitialize(gDisplay, nullptr, nullptr)) return fail("eglInitialize gagal");
 
     const EGLint configAttribs[] = {
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
@@ -45,8 +63,7 @@ bool egl_bridge_setup(JNIEnv *env, jobject surface) {
     EGLConfig config = nullptr;
     EGLint numConfigs = 0;
     if (!eglChooseConfig(gDisplay, configAttribs, &config, 1, &numConfigs) || numConfigs < 1) {
-        LOGE("eglChooseConfig tidak menemukan config, error 0x%x", eglGetError());
-        return false;
+        return fail("eglChooseConfig tidak menemukan config");
     }
 
     // Format piksel harus cocok dengan config sebelum surface dibuat.
@@ -55,21 +72,14 @@ bool egl_bridge_setup(JNIEnv *env, jobject surface) {
     ANativeWindow_setBuffersGeometry(gWindow, 0, 0, visualId);
 
     gSurface = eglCreateWindowSurface(gDisplay, config, gWindow, nullptr);
-    if (gSurface == EGL_NO_SURFACE) {
-        LOGE("eglCreateWindowSurface gagal: 0x%x", eglGetError());
-        return false;
-    }
+    if (gSurface == EGL_NO_SURFACE) return fail("eglCreateWindowSurface gagal");
 
     const EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
     gContext = eglCreateContext(gDisplay, config, EGL_NO_CONTEXT, contextAttribs);
-    if (gContext == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext gagal: 0x%x", eglGetError());
-        return false;
-    }
+    if (gContext == EGL_NO_CONTEXT) return fail("eglCreateContext gagal");
 
     if (!eglMakeCurrent(gDisplay, gSurface, gSurface, gContext)) {
-        LOGE("eglMakeCurrent gagal: 0x%x", eglGetError());
-        return false;
+        return fail("eglMakeCurrent gagal");
     }
 
     LOGI("EGL GLES2 siap di thread ini");

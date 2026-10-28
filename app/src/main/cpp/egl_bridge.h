@@ -5,10 +5,15 @@
 
 #include <jni.h>
 
+#include <string>
+
 // Membuat display, surface, dan context GLES2 dari android.view.Surface,
 // lalu menjadikannya current di thread yang memanggil fungsi ini.
 // gl4es memakai context yang sudah current, jadi thread harus sama dengan thread JVM.
 bool egl_bridge_setup(JNIEnv *env, jobject surface);
+
+// Pesan error terakhir dari egl_bridge_setup, kosong jika berhasil.
+std::string egl_bridge_last_error();
 
 // Menukar buffer ke layar. Dipanggil dari thread render.
 void egl_bridge_swap();
