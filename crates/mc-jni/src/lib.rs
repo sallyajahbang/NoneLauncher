@@ -71,7 +71,7 @@ pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_buildComman
     version_json: JString,
     config_json: JString,
 ) -> jstring {
-    let run = || -> Result<String> {
+    let mut run = || -> Result<String> {
         let version: VersionJson = serde_json::from_str(&read(&mut env, &version_json)?)?;
         let cfg: LaunchConfig = serde_json::from_str(&read(&mut env, &config_json)?)?;
         let cmd = launch::build(&version, &cfg)?;
@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_downloadTas
     version_json: JString,
     config_json: JString,
 ) -> jstring {
-    let run = || -> Result<String> {
+    let mut run = || -> Result<String> {
         let version: VersionJson = serde_json::from_str(&read(&mut env, &version_json)?)?;
         let cfg: LaunchConfig = serde_json::from_str(&read(&mut env, &config_json)?)?;
         Ok(serde_json::to_string(&download::plan(&version, &cfg))?)
