@@ -75,6 +75,15 @@ jobs:
       - name: Install cargo-apk
         run: cargo install cargo-apk --locked
 
+      # cargo-apk v0.10 mewajibkan keystore untuk build release. Keystore dibuat
+      # setiap run di CI (tidak disimpan di repo). APK cocok untuk sideload.
+      - name: Create CI signing keystore
+        run: |
+          keytool -genkeypair -v -keystore ci-release.keystore \
+            -storepass rustrowser-ci -keypass rustrowser-ci \
+            -alias rustrowser -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=RustRowser CI"
+
       - name: Build APK (release)
         run: cargo apk build --release --lib
 

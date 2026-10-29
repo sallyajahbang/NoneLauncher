@@ -3,3 +3,4 @@
 *.idsig
 *.keystore
 .DS_Store
+ci-release.keystore
