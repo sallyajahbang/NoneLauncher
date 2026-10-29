@@ -32,7 +32,7 @@ object GameLauncher {
         log: (String) -> Unit,
     ): Int {
         val meta = VersionRepository.readLocal(baseDir, versionId)
-            ?: error("Versi $versionId belum diunduh")
+            ?: error("Versi $versionId belum lengkap. Tekan \"Unduh versi\" dan tunggu sampai selesai dulu.")
 
         val gameDir = File(baseDir, "game").apply { mkdirs() }
         val nativesDir = File(baseDir, "natives/${meta.id}").apply { mkdirs() }
