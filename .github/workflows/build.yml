@@ -1,0 +1,91 @@
+name: Build RustRowser
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  NDK_VERSION: "26.3.11579264"
+  BUILD_TOOLS: "34.0.0"
+  PLATFORM: "android-34"
+
+jobs:
+  # ---------- 1. Uji logika (desktop) ----------
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system libs (winit/egui di Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format check (informasi saja)
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Unit tests
+        run: cargo test --lib
+
+      - name: Clippy (tanpa menggagalkan build)
+        continue-on-error: true
+        run: cargo clippy --lib -- -W clippy::all
+
+  # ---------- 2. Build APK Android ----------
+  android:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK, platform & build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "ndk;${NDK_VERSION}" "platforms;${PLATFORM}" "build-tools;${BUILD_TOOLS}"
+
+      - name: Install cargo-apk
+        run: cargo install cargo-apk --locked
+
+      - name: Build APK (release)
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}
+        run: cargo apk build --release --lib
+
+      - name: Show APK
+        run: ls -lh target/release/apk/*.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RustRowser-apk
+          path: target/release/apk/*.apk
+          if-no-files-found: error
+          retention-days: 14

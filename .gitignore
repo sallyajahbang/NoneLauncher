@@ -1,9 +1,5 @@
-*.iml
-.gradle/
-build/
-local.properties
-.idea/
-*.jks
+/target
+*.apk
+*.idsig
 *.keystore
-.store_password.txt
-.key_password.txt
+.DS_Store
