@@ -3,12 +3,12 @@
 Launcher Minecraft Java Edition untuk Android, ditulis dari nol.
 Zalith Launcher 2 dipakai sebagai bahan belajar (lihat `docs/ZALITH_STUDY.md`), bukan sebagai basis kode.
 
-## Status: tahap 1 (fondasi)
+## Status: tahap 2 (fondasi + library)
 - [x] Proyek Gradle + Compose
 - [x] Pembacaan versi terpasang dari `versions/<id>/<id>.json` (`InstanceScanner`)
 - [x] Daftar versi dan pemilihan di layar utama
 - [x] Test unit untuk scanner
-- [ ] Pembacaan library dan asset
+- [x] Pembacaan library dan asset (`VersionResolver`: inheritsFrom, rules OS, asset index)
 - [ ] Unduhan file yang belum ada
 - [ ] Penyusunan argumen JVM
 - [ ] Runtime Java
