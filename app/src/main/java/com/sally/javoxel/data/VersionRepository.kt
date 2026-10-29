@@ -1,5 +1,6 @@
 package com.sally.javoxel.data
 
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -36,7 +37,16 @@ object VersionRepository {
 
     fun loadMeta(id: String): VersionMeta {
         val url = findVersionUrl(id) ?: error("Versi $id tidak ada di manifest Mojang")
-        val raw = Downloader.fetchText(url)
+        return parseMeta(Downloader.fetchText(url))
+    }
+
+    /** Versi yang sudah diunduh, dibaca dari versions/<id>/<id>.json. Null jika belum ada. */
+    fun readLocal(baseDir: File, id: String): VersionMeta? {
+        val file = File(baseDir, "versions/$id/$id.json")
+        return if (file.isFile) parseMeta(file.readText()) else null
+    }
+
+    fun parseMeta(raw: String): VersionMeta {
         val json = JSONObject(raw)
 
         val client = json.getJSONObject("downloads").getJSONObject("client")

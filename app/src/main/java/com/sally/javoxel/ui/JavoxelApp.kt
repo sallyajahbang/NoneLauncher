@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.sally.javoxel.data.MinecraftInstaller
+import com.sally.javoxel.game.GameLauncher
 import com.sally.javoxel.game.requiredJavaMajor
 import com.sally.javoxel.runtime.JreInstaller
 import java.io.File
@@ -36,7 +37,15 @@ fun JavoxelApp() {
     var version by remember { mutableStateOf("1.16.5") }
     var busy by remember { mutableStateOf(false) }
     val logLines = remember { mutableStateListOf<String>() }
-    val javaMajor = requiredJavaMajor(version)
+    // Tebakan untuk tampilan saja. Saat aksi dijalankan, versi lokal dibaca dulu.
+    val guessedJava = requiredJavaMajor(version)
+
+    val minecraftDir = File(context.filesDir, "minecraft")
+    val runtimeDir = File(context.filesDir, "runtime")
+
+    fun log(msg: String) {
+        scope.launch { logLines.add(msg) }
+    }
 
     Column(
         modifier = Modifier
@@ -58,7 +67,7 @@ fun JavoxelApp() {
             modifier = Modifier.fillMaxWidth()
         )
 
-        Text("Butuh Java $javaMajor")
+        Text("Butuh Java $guessedJava")
 
         BevelButton(
             text = if (busy) "Mengunduh..." else "Unduh versi",
@@ -69,12 +78,11 @@ fun JavoxelApp() {
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
-                            MinecraftInstaller(File(context.filesDir, "minecraft")) { msg ->
-                                scope.launch { logLines.add(msg) }
-                            }.install(target)
+                            MinecraftInstaller(minecraftDir) { msg -> log(msg) }
+                                .install(target)
                         }
                     } catch (e: Exception) {
-                        logLines.add("Gagal: ${e.message}")
+                        log("Gagal: ${e.message}")
                     } finally {
                         busy = false
                     }
@@ -83,20 +91,20 @@ fun JavoxelApp() {
         )
 
         BevelButton(
-            text = "Siapkan Java $javaMajor",
+            text = "Siapkan Java",
             enabled = !busy,
             onClick = {
                 busy = true
-                val major = requiredJavaMajor(version.trim())
+                val id = version.trim()
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
-                            JreInstaller(File(context.filesDir, "runtime"), context.assets) { msg ->
-                                scope.launch { logLines.add(msg) }
-                            }.ensureJre(major)
+                            val major = GameLauncher.javaMajorFor(minecraftDir, id)
+                            JreInstaller(runtimeDir, context.assets) { msg -> log(msg) }
+                                .ensureJre(major)
                         }
-                    } catch (e: Exception) {
-                        logLines.add("Gagal JRE: ${e.message}")
+                    } catch (e: Throwable) {
+                        log("Gagal JRE: ${e.message}")
                     } finally {
                         busy = false
                     }
@@ -105,9 +113,34 @@ fun JavoxelApp() {
         )
 
         BevelButton(
-            text = "Launch (belum tersedia)",
-            enabled = false,
-            onClick = { /* TODO: hubungkan ke GameLauncher */ }
+            text = "Launch",
+            enabled = !busy,
+            onClick = {
+                busy = true
+                val id = version.trim()
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val major = GameLauncher.javaMajorFor(minecraftDir, id)
+                            val javaHome = JreInstaller(runtimeDir, context.assets) { msg -> log(msg) }
+                                .ensureJre(major)
+                            GameLauncher.launch(
+                                baseDir = minecraftDir,
+                                javaHome = javaHome,
+                                javaMajor = major,
+                                versionId = id,
+                                playerName = "Player",
+                                memoryMb = 1024,
+                                log = { msg -> log(msg) },
+                            )
+                        }
+                    } catch (e: Throwable) {
+                        log("Gagal launch: ${e.message}")
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
         )
 
         LazyColumn(
