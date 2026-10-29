@@ -14,7 +14,8 @@ import org.tukaani.xz.XZInputStream
  *   assets/jre/jre-<major>/universal.tar.xz  (opsional, bagian Java non-native)
  *   assets/jre/jre-<major>/bin-arm64.tar.xz  (bin dan native arm64)
  *
- * Hasil ekstrak ada di [baseDir]/java-<major>/. Pakai folder eksternal app agar file bisa dieksekusi.
+ * Hasil ekstrak ada di [baseDir]/java-<major>/. Jangan pakai penyimpanan eksternal (sdcard):
+ * di sana symlink tidak bisa dibuat ("Operation not permitted").
  * Harus dipanggil dari thread IO.
  */
 class JreInstaller(

@@ -12,9 +12,9 @@ Scaffold awal. Yang sudah ada:
 - `requiredJavaMajor()` untuk memetakan versi Minecraft ke versi Java (8 / 17 / 21)
 - `data/`: unduh manifest Mojang, JSON versi, client.jar, libraries (artifact utama), dan aset, dengan verifikasi SHA-1. Tombol "Unduh versi" di layar sudah memakainya. Unduhan ke `filesDir/minecraft/`.
 
-- `runtime/`: unduh arsip JRE (tar.xz), verifikasi SHA-1, ekstrak ke `getExternalFilesDir()/runtime/java-<major>/`, dan set bit eksekusi. Tombol "Siapkan Java" di layar memakainya.
+- `runtime/`: ekstrak JRE dari assets (`assets/jre/jre-<major>/`: `universal.tar.xz` opsional dan `bin-arm64.tar.xz`) ke `getExternalFilesDir()/runtime/java-<major>/`, lalu set bit eksekusi. Tombol "Siapkan Java" di layar memakainya.
 
-**Belum diisi:** URL sumber JRE di `runtime/JavaSources.kt`. Tanpa URL itu, tombol "Siapkan Java" akan gagal dengan pesan yang jelas.
+**Catatan JRE:** yang di-bundle saat ini hanya `bin-arm64.tar.xz` untuk JRE 8, 17, dan 21, tanpa `universal.tar.xz`. Bagian class library (mis. `lib/rt.jar` untuk JRE 8, `lib/modules` untuk 17 dan 21) belum ada, jadi JRE belum bisa dijalankan.
 
 Belum ada: natives per-classifier, renderer, layer GLFW, input sentuh, dan auth.
 

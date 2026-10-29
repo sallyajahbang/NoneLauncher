@@ -92,7 +92,7 @@ fun JavoxelApp() {
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
-                            val base = context.getExternalFilesDir(null) ?: context.filesDir
+                            val base = context.filesDir
                             JreInstaller(File(base, "runtime"), context.assets) { msg ->
                                 scope.launch { logLines.add(msg) }
                             }.ensureJre(major)

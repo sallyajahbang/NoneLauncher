@@ -11,7 +11,9 @@ android {
     defaultConfig {
         applicationId = "com.sally.javoxel"
         minSdk = 26
-        targetSdk = 35
+        // Android 10+ memblokir eksekusi file dari folder data app untuk targetSdk 29 ke atas.
+        // JRE dieksekusi dari filesDir, jadi targetSdk diturunkan. Perlu diuji di HP.
+        targetSdk = 28
         versionCode = 1
         versionName = "0.1.0"
     }
