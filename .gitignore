@@ -1,6 +1,10 @@
-/target
-*.apk
-*.idsig
-*.keystore
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
 .DS_Store
-ci-release.keystore

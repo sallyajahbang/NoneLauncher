@@ -1,99 +1,41 @@
-name: Build RustRowser
+name: Build
 
 on:
   push:
-    branches: [main, master]
+    branches: [ "main", "master" ]
   pull_request:
   workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
-  NDK_VERSION: "26.3.11579264"
-  BUILD_TOOLS: "34.0.0"
-  PLATFORM: "android-34"
+permissions:
+  contents: read
 
 jobs:
-  # ---------- 1. Uji logika (desktop) ----------
-  test:
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install system libs (winit/egui di Linux)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Format check (informasi saja)
-        continue-on-error: true
-        run: cargo fmt --all -- --check
-
-      - name: Unit tests
-        run: cargo test --lib
-
-      - name: Clippy (tanpa menggagalkan build)
-        continue-on-error: true
-        run: cargo clippy --lib -- -W clippy::all
-
-  # ---------- 2. Build APK Android ----------
-  android:
-    needs: test
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: android
-
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
 
-      # Runner ubuntu-24.04 sudah punya Android SDK (ANDROID_HOME). Tidak perlu
-      # setup-android (versi v3 gagal karena paket "tools" tidak ditemukan).
-      - name: Install NDK, platform & build-tools
-        run: |
-          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
-          echo "Pakai sdkmanager: $SDKM"
-          yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" "ndk;${NDK_VERSION}" "platforms;${PLATFORM}" "build-tools;${BUILD_TOOLS}"
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
 
-      - name: Install cargo-apk
-        run: cargo install cargo-apk --locked
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon
 
-      # cargo-apk v0.10 mewajibkan keystore untuk build release. Keystore dibuat
-      # setiap run di CI (tidak disimpan di repo). APK cocok untuk sideload.
-      - name: Create CI signing keystore
-        run: |
-          keytool -genkeypair -v -keystore ci-release.keystore \
-            -storepass rustrowser-ci -keypass rustrowser-ci \
-            -alias rustrowser -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=RustRowser CI"
-
-      - name: Build APK (release)
-        run: cargo apk build --release --lib
-
-      - name: Show APK
-        run: ls -lh target/release/apk/*.apk
-
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: RustRowser-apk
-          path: target/release/apk/*.apk
+          name: javoxel-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
