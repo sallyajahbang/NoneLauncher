@@ -1,0 +1,15 @@
+[package]
+name = "mc-jni"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "JNI bridge exposing mc-core to Kotlin/Android"
+
+[lib]
+name = "mc_jni"
+crate-type = ["cdylib"]
+
+[dependencies]
+mc-core = { path = "../mc-core" }
+jni = "0.21"
+serde_json = "1"

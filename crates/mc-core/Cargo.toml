@@ -1,0 +1,14 @@
+[package]
+name = "mc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent Minecraft: Java Edition launcher core (manifest, rules, downloads, launch command)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+ureq = "2"
+sha1 = "0.10"
+md5 = "0.7"
