@@ -5,22 +5,37 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.sally.javoxel.data.MinecraftInstaller
 import com.sally.javoxel.game.requiredJavaMajor
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun JavoxelApp() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var version by remember { mutableStateOf("1.16.5") }
+    var busy by remember { mutableStateOf(false) }
+    val logLines = remember { mutableStateListOf<String>() }
     val javaMajor = requiredJavaMajor(version)
 
     Column(
@@ -39,13 +54,46 @@ fun JavoxelApp() {
             onValueChange = { version = it },
             label = { Text("Versi Minecraft") },
             singleLine = true,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth()
         )
 
         Text("Butuh Java $javaMajor")
 
+        Button(
+            enabled = !busy && version.isNotBlank(),
+            onClick = {
+                busy = true
+                val target = version.trim()
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            MinecraftInstaller(File(context.filesDir, "minecraft")) { msg ->
+                                scope.launch { logLines.add(msg) }
+                            }.install(target)
+                        }
+                    } catch (e: Exception) {
+                        logLines.add("Gagal: ${e.message}")
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+        ) {
+            Text(if (busy) "Mengunduh..." else "Unduh versi")
+        }
+
         Button(onClick = { /* TODO: hubungkan ke GameLauncher */ }, enabled = false) {
             Text("Launch (belum tersedia)")
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(logLines) { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
