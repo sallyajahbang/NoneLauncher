@@ -12,7 +12,11 @@ Scaffold awal. Yang sudah ada:
 - `requiredJavaMajor()` untuk memetakan versi Minecraft ke versi Java (8 / 17 / 21)
 - `data/`: unduh manifest Mojang, JSON versi, client.jar, libraries (artifact utama), dan aset, dengan verifikasi SHA-1. Tombol "Unduh versi" di layar sudah memakainya. Unduhan ke `filesDir/minecraft/`.
 
-Belum ada: natives per-classifier, unduh JRE, renderer, layer GLFW, input sentuh, dan auth.
+- `runtime/`: unduh arsip JRE (tar.xz), verifikasi SHA-1, ekstrak ke `getExternalFilesDir()/runtime/java-<major>/`, dan set bit eksekusi. Tombol "Siapkan Java" di layar memakainya.
+
+**Belum diisi:** URL sumber JRE di `runtime/JavaSources.kt`. Tanpa URL itu, tombol "Siapkan Java" akan gagal dengan pesan yang jelas.
+
+Belum ada: natives per-classifier, renderer, layer GLFW, input sentuh, dan auth.
 
 ## Build
 
@@ -28,7 +32,7 @@ APK ada di `app/build/outputs/apk/debug/`.
 ## Rencana berikutnya
 
 1. Natives per-classifier untuk LWJGL (1.16.5 masih pakai format `natives`)
-2. Package `runtime/` untuk unduh dan ekstrak JRE (sumber: build OpenJDK Android arm64)
+2. Isi URL JRE 8, 17, dan 21 di `runtime/JavaSources.kt` setelah diverifikasi
 3. Layer GLFW (LWJGL 3) dan EGL bridge via NDK / CMake
 4. Renderer gl4es, lalu Zink sebagai opsi kedua
 5. Input sentuh

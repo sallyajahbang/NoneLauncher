@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.sally.javoxel.data.MinecraftInstaller
 import com.sally.javoxel.game.requiredJavaMajor
+import com.sally.javoxel.runtime.JreInstaller
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -81,6 +82,30 @@ fun JavoxelApp() {
             }
         ) {
             Text(if (busy) "Mengunduh..." else "Unduh versi")
+        }
+
+        Button(
+            enabled = !busy,
+            onClick = {
+                busy = true
+                val major = requiredJavaMajor(version.trim())
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val base = context.getExternalFilesDir(null) ?: context.filesDir
+                            JreInstaller(File(base, "runtime"), context.assets) { msg ->
+                                scope.launch { logLines.add(msg) }
+                            }.ensureJre(major)
+                        }
+                    } catch (e: Exception) {
+                        logLines.add("Gagal JRE: ${e.message}")
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+        ) {
+            Text("Siapkan Java $javaMajor")
         }
 
         Button(onClick = { /* TODO: hubungkan ke GameLauncher */ }, enabled = false) {
