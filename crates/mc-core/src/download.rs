@@ -1,10 +1,11 @@
 //! Network and disk operations: fetch metadata, plan downloads, verify SHA-1.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
 use crate::launch::LaunchConfig;
@@ -14,12 +15,27 @@ use crate::{Error, Result};
 
 /// Fallback base for libraries that do not list an explicit URL.
 pub const LIBRARY_BASE_URL: &str = "https://libraries.minecraft.net/";
+/// Base URL for asset objects, addressed by their SHA-1 hash.
+pub const ASSET_BASE_URL: &str = "https://resources.download.minecraft.net/";
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DownloadTask {
     pub url: String,
     pub dest: PathBuf,
     pub sha1: String,
+    pub size: u64,
+}
+
+/// `assets/indexes/<id>.json`
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssetIndex {
+    pub objects: HashMap<String, AssetObject>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssetObject {
+    pub hash: String,
+    #[serde(default)]
     pub size: u64,
 }
 
@@ -39,7 +55,7 @@ pub fn fetch_version(entry: &VersionEntry) -> Result<VersionJson> {
 }
 
 /// Every file needed to launch this version on the configured platform.
-/// Asset objects are not included yet; they come from the asset index.
+/// Asset objects are planned separately with `plan_assets`.
 pub fn plan(version: &VersionJson, cfg: &LaunchConfig) -> Vec<DownloadTask> {
     let ctx = cfg.effective_context();
     let mut tasks = Vec::new();
@@ -73,6 +89,23 @@ pub fn plan(version: &VersionJson, cfg: &LaunchConfig) -> Vec<DownloadTask> {
     }
 
     tasks
+}
+
+/// Asset objects go to `<assets_dir>/objects/<first two hex chars>/<hash>`.
+pub fn plan_assets(index: &AssetIndex, assets_dir: &Path) -> Vec<DownloadTask> {
+    index
+        .objects
+        .values()
+        .filter_map(|obj| {
+            let prefix = obj.hash.get(..2)?;
+            Some(DownloadTask {
+                url: format!("{ASSET_BASE_URL}{prefix}/{}", obj.hash),
+                dest: assets_dir.join("objects").join(prefix).join(&obj.hash),
+                sha1: obj.hash.clone(),
+                size: obj.size,
+            })
+        })
+        .collect()
 }
 
 /// Downloads one file, skipping it if the existing copy already matches.
@@ -124,7 +157,21 @@ mod tests {
 
     #[test]
     fn sha1_known_vector() {
-        // SHA-1("abc")
         assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    }
+
+    #[test]
+    fn plans_assets_under_hash_prefix() {
+        let index: AssetIndex = serde_json::from_str(
+            r#"{"objects": {"minecraft/sounds/a.ogg": {"hash": "abcdef0123", "size": 3}}}"#,
+        )
+        .unwrap();
+        let tasks = plan_assets(&index, Path::new("/data/assets"));
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].url,
+            "https://resources.download.minecraft.net/ab/abcdef0123"
+        );
+        assert!(tasks[0].dest.ends_with("objects/ab/abcdef0123"));
     }
 }

@@ -3,16 +3,20 @@
 //! Every function returns a JSON string. On failure it returns `{"error": "..."}`,
 //! so Kotlin only has to parse one shape.
 
+use std::path::Path;
+
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
 
 use mc_core::auth;
-use mc_core::download;
+use mc_core::download::{self, AssetIndex, DownloadTask};
 use mc_core::launch::{self, LaunchConfig};
 use mc_core::manifest::MANIFEST_URL;
 use mc_core::version::VersionJson;
 use mc_core::{Error, Result};
+
+mod jvm;
 
 fn read(env: &mut JNIEnv, s: &JString) -> Result<String> {
     let java = env
@@ -92,6 +96,69 @@ pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_downloadTas
         let version: VersionJson = serde_json::from_str(&read(&mut env, &version_json)?)?;
         let cfg: LaunchConfig = serde_json::from_str(&read(&mut env, &config_json)?)?;
         Ok(serde_json::to_string(&download::plan(&version, &cfg))?)
+    };
+    let out = into_json_or_error(run());
+    to_jstring(&mut env, &out)
+}
+
+/// `indexJson` is the asset index file. Returns a JSON array of download tasks.
+#[no_mangle]
+pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_assetTasks(
+    mut env: JNIEnv,
+    _class: JClass,
+    index_json: JString,
+    assets_dir: JString,
+) -> jstring {
+    let mut run = || -> Result<String> {
+        let index: AssetIndex = serde_json::from_str(&read(&mut env, &index_json)?)?;
+        let dir = read(&mut env, &assets_dir)?;
+        Ok(serde_json::to_string(&download::plan_assets(
+            &index,
+            Path::new(&dir),
+        ))?)
+    };
+    let out = into_json_or_error(run());
+    to_jstring(&mut env, &out)
+}
+
+/// Downloads one task (as produced by `downloadTasks` or `assetTasks`).
+#[no_mangle]
+pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_downloadFile(
+    mut env: JNIEnv,
+    _class: JClass,
+    task_json: JString,
+) -> jstring {
+    let mut run = || -> Result<String> {
+        let task: DownloadTask = serde_json::from_str(&read(&mut env, &task_json)?)?;
+        download::download(&task)?;
+        Ok(r#"{"ok":true}"#.to_string())
+    };
+    let out = into_json_or_error(run());
+    to_jstring(&mut env, &out)
+}
+
+/// Starts the JVM and runs `mainClass.main`. `argsJson` is the full argument
+/// list from `buildCommand` (JVM options, main class, game arguments).
+/// Blocks until the game exits, so call it from a background thread.
+#[no_mangle]
+pub extern "system" fn Java_com_sally_nonelauncher_core_NativeBridge_launchJvm(
+    mut env: JNIEnv,
+    _class: JClass,
+    libjvm_path: JString,
+    main_class: JString,
+    args_json: JString,
+) -> jstring {
+    let mut run = || -> Result<String> {
+        let libjvm = read(&mut env, &libjvm_path)?;
+        let main = read(&mut env, &main_class)?;
+        let all: Vec<String> = serde_json::from_str(&read(&mut env, &args_json)?)?;
+        let idx = all
+            .iter()
+            .position(|a| *a == main)
+            .ok_or_else(|| Error::Other("main class tidak ada di argumen".into()))?;
+        let (jvm_args, rest) = all.split_at(idx);
+        jvm::run_main(&libjvm, jvm_args, &main, &rest[1..])?;
+        Ok(r#"{"ok":true}"#.to_string())
     };
     let out = into_json_or_error(run());
     to_jstring(&mut env, &out)

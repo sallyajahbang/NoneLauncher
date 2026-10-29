@@ -2,7 +2,7 @@ package com.sally.nonelauncher.core
 
 /**
  * Kotlin side of the JNI bridge. Implementations live in crates/mc-jni (Rust).
- * Every function returns a JSON string. On failure it contains {"error": "..."}.
+ * Most functions return JSON. On failure they contain {"error": "..."}.
  */
 object NativeBridge {
     init {
@@ -21,6 +21,19 @@ object NativeBridge {
     /** Returns {"program": "...", "args": [...]} for the given version and config JSON. */
     @JvmStatic external fun buildCommand(versionJson: String, configJson: String): String
 
-    /** Returns a JSON array of {url, dest, sha1, size} for everything the version needs. */
+    /** Returns a JSON array of {url, dest, sha1, size} for the version's libraries and client. */
     @JvmStatic external fun downloadTasks(versionJson: String, configJson: String): String
+
+    /** Returns a JSON array of download tasks for the asset objects in an asset index. */
+    @JvmStatic external fun assetTasks(indexJson: String, assetsDir: String): String
+
+    /** Downloads one task (from taskJson) to its dest. Returns {"ok":true} on success. */
+    @JvmStatic external fun downloadFile(taskJson: String): String
+
+    /**
+     * Starts the JVM from libjvmPath and runs mainClass.main(args).
+     * argsJson is a JSON array of the arguments from buildCommand.
+     * Blocks until the game exits. Call it from a background thread.
+     */
+    @JvmStatic external fun launchJvm(libjvmPath: String, mainClass: String, argsJson: String): String
 }
