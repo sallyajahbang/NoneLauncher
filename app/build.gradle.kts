@@ -47,4 +47,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
 
     testImplementation("junit:junit:4.13.2")
+    // android.jar di unit test hanya berisi stub: org.json akan melempar "Stub!".
+    // Dependency ini menyediakan implementasi asli untuk JVM test.
+    testImplementation("org.json:json:20240303")
 }
