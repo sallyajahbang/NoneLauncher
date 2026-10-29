@@ -224,7 +224,10 @@ mod tests {
             m.navigate(0, format!("https://x/{i}"));
         }
         assert_eq!(m.tabs[0].history.len(), MAX_HISTORY);
-        assert_eq!(m.tabs[0].url(), Some(format!("https://x/{}", MAX_HISTORY + 9).as_str()));
+        assert_eq!(
+            m.tabs[0].url(),
+            Some(format!("https://x/{}", MAX_HISTORY + 9).as_str())
+        );
     }
 
     #[test]

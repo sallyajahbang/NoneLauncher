@@ -21,8 +21,29 @@ const SKIP: &[&str] = &[
 
 /// Elemen yang memulai baris baru.
 const BLOCK: &[&str] = &[
-    "p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "section", "article",
-    "header", "footer", "blockquote", "pre", "ul", "ol", "table", "hr", "nav", "main",
+    "p",
+    "div",
+    "br",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "tr",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "blockquote",
+    "pre",
+    "ul",
+    "ol",
+    "table",
+    "hr",
+    "nav",
+    "main",
 ];
 
 #[derive(Clone)]

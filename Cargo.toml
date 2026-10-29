@@ -19,6 +19,8 @@ path = "src/main.rs"
 eframe = { version = "0.31", default-features = false, features = [
     "default_fonts",
     "glow",
+    "x11",        # backend Linux (dibutuhkan winit di CI & desktop)
+    "wayland",
     "android-native-activity",
 ] }
 # HTTP blocking dengan rustls (tanpa OpenSSL, mudah dicross-compile)

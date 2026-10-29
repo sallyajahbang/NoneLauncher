@@ -64,7 +64,11 @@ impl BrowserApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let result = fetch::load(&url);
-            let _ = tx.send(FetchResult { tab_id, url, result });
+            let _ = tx.send(FetchResult {
+                tab_id,
+                url,
+                result,
+            });
             ctx.request_repaint();
         });
     }
