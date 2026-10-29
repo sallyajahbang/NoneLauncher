@@ -71,10 +71,17 @@ object LaunchCommand {
     }
 
     /** Ganti ${nama} dengan nilai dari [vars]. Yang tidak dikenal dibiarkan. */
-    private fun substitute(text: String, vars: Map<String, String>): String =
-        Regex("""\$\{(\w+)}""").replace(text) { match ->
-            vars[match.groupValues[1]] ?: match.value
+    /**
+     * Pakai replace biasa, bukan regex. Regex Android (ICU) menolak `}` tanpa escape
+     * yang diterima JVM biasa, dan replace biasa juga lebih cepat.
+     */
+    private fun substitute(text: String, vars: Map<String, String>): String {
+        var out = text
+        for ((key, value) in vars) {
+            out = out.replace("\${$key}", value)
         }
+        return out
+    }
 
     /**
      * Ambil string dari array argumen. Entri berupa String atau objek dengan "rules" dan "value".
