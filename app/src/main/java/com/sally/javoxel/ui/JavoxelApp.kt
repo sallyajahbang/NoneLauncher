@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -61,7 +60,8 @@ fun JavoxelApp() {
 
         Text("Butuh Java $javaMajor")
 
-        Button(
+        BevelButton(
+            text = if (busy) "Mengunduh..." else "Unduh versi",
             enabled = !busy && version.isNotBlank(),
             onClick = {
                 busy = true
@@ -80,11 +80,10 @@ fun JavoxelApp() {
                     }
                 }
             }
-        ) {
-            Text(if (busy) "Mengunduh..." else "Unduh versi")
-        }
+        )
 
-        Button(
+        BevelButton(
+            text = "Siapkan Java $javaMajor",
             enabled = !busy,
             onClick = {
                 busy = true
@@ -92,8 +91,7 @@ fun JavoxelApp() {
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
-                            val base = context.filesDir
-                            JreInstaller(File(base, "runtime"), context.assets) { msg ->
+                            JreInstaller(File(context.filesDir, "runtime"), context.assets) { msg ->
                                 scope.launch { logLines.add(msg) }
                             }.ensureJre(major)
                         }
@@ -104,13 +102,13 @@ fun JavoxelApp() {
                     }
                 }
             }
-        ) {
-            Text("Siapkan Java $javaMajor")
-        }
+        )
 
-        Button(onClick = { /* TODO: hubungkan ke GameLauncher */ }, enabled = false) {
-            Text("Launch (belum tersedia)")
-        }
+        BevelButton(
+            text = "Launch (belum tersedia)",
+            enabled = false,
+            onClick = { /* TODO: hubungkan ke GameLauncher */ }
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
