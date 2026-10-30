@@ -19,6 +19,9 @@ use winit::platform::android::activity::AndroidApp;
 use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::window::{Window, WindowId};
 
+mod logfile;
+use logfile::dlog;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
@@ -209,6 +212,7 @@ async fn pick_adapter(
     window: &Arc<Window>,
 ) -> Option<(wgpu::Instance, wgpu::Surface<'static>, wgpu::Adapter)> {
     for backends in [wgpu::Backends::VULKAN, wgpu::Backends::GL] {
+        dlog(format!("mencoba backend {backends:?}"));
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends,
             ..Default::default()
@@ -256,8 +260,10 @@ impl Gfx {
             .await
             .ok_or("tidak ada adapter Vulkan maupun GLES")?;
 
+        dlog(format!("adapter: {:?}", adapter.get_info()));
         log::info!("adapter: {:?}", adapter.get_info());
 
+        dlog("membuat device");
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -269,6 +275,7 @@ impl Gfx {
             )
             .await
             .map_err(|e| format!("request_device gagal: {e:?}"))?;
+        dlog("device ok");
 
         let caps = surface.get_capabilities(&adapter);
         let format = caps
@@ -290,9 +297,11 @@ impl Gfx {
         };
         surface.configure(&device, &config);
 
+        dlog("membuat pipeline");
         let scene = panic::catch_unwind(AssertUnwindSafe(|| Scene::new(&device, format)))
             .map_err(|_| log::error!("pembuatan pipeline gagal"))
             .ok();
+        dlog(format!("pipeline ok: {}", scene.is_some()));
 
         let depth_view = create_depth_view(&device, config.width, config.height);
 
@@ -320,6 +329,12 @@ impl Gfx {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        static FIRST_FRAME: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(true);
+        if FIRST_FRAME.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            dlog("frame pertama dirender");
+        }
+
         let t = self.start.elapsed().as_secs_f32();
 
         if let Some(scene) = &self.scene {
@@ -409,8 +424,10 @@ impl ApplicationHandler for App {
             }
         };
 
+        dlog("resumed: membuat Gfx");
         match pollster::block_on(Gfx::new(window)) {
             Ok(gfx) => {
+                dlog("render context siap");
                 log::info!("render context siap");
                 self.gfx = Some(gfx);
             }
@@ -453,16 +470,20 @@ impl ApplicationHandler for App {
 
 #[no_mangle]
 fn android_main(app: AndroidApp) {
+    logfile::init(app.external_data_path());
+    dlog("android_main masuk");
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
+    dlog("membuat event loop");
     let event_loop = EventLoop::builder()
         .with_android_app(app)
         .build()
         .expect("gagal membuat event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
 
+    dlog("menjalankan run_app");
     let mut app = App::default();
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop berhenti: {e}");
