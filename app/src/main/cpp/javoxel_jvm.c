@@ -13,6 +13,7 @@
  */
 #define _POSIX_C_SOURCE 200809L
 
+#include <dirent.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <jni.h>
@@ -154,6 +155,73 @@ Java_com_sally_javoxel_runtime_JvmLauncher_redirectOutput(JNIEnv *env, jobject t
     LOGI("log native aktif: %s", path);
 
     (*env)->ReleaseStringUTFChars(env, jpath, path);
+}
+
+/*
+ * Kotlin: private external fun preloadLibraries(dir: String): Int
+ *
+ * Memuat semua .so di folder lib JRE dengan RTLD_GLOBAL. Linker Android tidak mencari
+ * dependency (DT_NEEDED) di folder JRE, jadi library yang sudah dimuat dengan nama yang
+ * sama akan dipakai ulang saat library lain memintanya (mis. libnio butuh libnet).
+ * Diulang selama masih ada kemajuan, karena urutan dependency belum tentu benar.
+ */
+#define PRELOAD_MAX 512
+
+JNIEXPORT jint JNICALL
+Java_com_sally_javoxel_runtime_JvmLauncher_preloadLibraries(JNIEnv *env, jobject thiz, jstring jdir) {
+    (void)thiz;
+    const char *dir = (*env)->GetStringUTFChars(env, jdir, NULL);
+    if (dir == NULL) return -1;
+
+    DIR *d = opendir(dir);
+    if (d == NULL) {
+        LOGE("preload: gagal membuka folder %s", dir);
+        (*env)->ReleaseStringUTFChars(env, jdir, dir);
+        return -1;
+    }
+
+    char *names[PRELOAD_MAX];
+    int n = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL && n < PRELOAD_MAX) {
+        size_t len = strlen(ent->d_name);
+        if (len > 3 && strcmp(ent->d_name + len - 3, ".so") == 0) {
+            names[n++] = strdup(ent->d_name);
+        }
+    }
+    closedir(d);
+
+    int done[PRELOAD_MAX];
+    memset(done, 0, sizeof(done));
+    char path[4096];
+    int loaded = 0;
+    int progress = 1;
+    while (progress) {
+        progress = 0;
+        for (int i = 0; i < n; i++) {
+            if (done[i]) continue;
+            snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+            if (dlopen(path, RTLD_LAZY | RTLD_GLOBAL) != NULL) {
+                done[i] = 1;
+                loaded++;
+                progress = 1;
+            }
+        }
+    }
+
+    LOGI("preload: %d dari %d library dimuat", loaded, n);
+    for (int i = 0; i < n; i++) {
+        if (!done[i]) {
+            snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+            dlopen(path, RTLD_LAZY | RTLD_GLOBAL);
+            const char *err = dlerror();
+            LOGE("preload gagal %s: %s", names[i], err ? err : "?");
+        }
+        free(names[i]);
+    }
+
+    (*env)->ReleaseStringUTFChars(env, jdir, dir);
+    return loaded;
 }
 
 /*

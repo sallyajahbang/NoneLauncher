@@ -21,6 +21,9 @@ object JvmLauncher {
     /** Arahkan stdout dan stderr native ke file log, dan pasang catcher crash native. */
     private external fun redirectOutput(path: String)
 
+    /** Muat semua .so di [dir] dengan RTLD_GLOBAL. Mengembalikan jumlah yang berhasil. */
+    private external fun preloadLibraries(dir: String): Int
+
     private external fun launchJvm(
         jliPath: String,
         fullVersion: String,
@@ -54,6 +57,12 @@ object JvmLauncher {
         AppLog.i("Class library: ${classLib.path}")
 
         redirectOutput(AppLog.latestPath())
+
+        // libjli ada di lib/<arch>/jli/, jadi folder lib/<arch>/ dua tingkat di atasnya.
+        val libDir = jli.parentFile.parentFile
+        AppLog.i("Preload library JRE dari ${libDir.path}")
+        AppLog.i("Preload: ${preloadLibraries(libDir.path)} library dimuat")
+
         return launchJvm(
             jliPath = jli.path,
             fullVersion = "$javaMajor.0.0-javoxel",
