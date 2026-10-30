@@ -79,6 +79,13 @@ rustcraft/
 
 The starter code is dual-licensed under MIT OR Apache-2.0. Third-party crates retain their own licenses. No Minecraft assets are included.
 
+## egui / eframe version compatibility
+
+This project currently targets `eframe` / `egui` 0.37. The application uses the
+0.34+ API split (`App::logic` + `App::ui`), `egui::Panel`, `CentralPanel::show`,
+and the `Context::global_style_mut` theme API. Do not paste examples written for
+pre-0.34 egui without migrating their API calls.
+
 ## GitHub Actions builds
 
 The CI workflow runs on every push, pull request, and manual dispatch. It builds

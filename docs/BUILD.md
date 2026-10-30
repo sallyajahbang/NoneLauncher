@@ -57,6 +57,15 @@ The APK is written to:
 
 For a release APK, run `gradle --no-daemon assembleRelease`.
 
+## eframe 0.37 API note
+
+The UI is written against eframe/egui 0.37. `eframe::App` requires `ui()` and
+provides `logic()` for per-frame non-UI work. Panels are composed through
+`egui::Panel` and `egui::CentralPanel` using a `&mut egui::Ui`; theme changes
+use `Context::global_style_mut`. Older egui snippets using `App::update`,
+`SidePanel`, `TopBottomPanel`, `Context::style`, or `Context::set_style` will
+not compile against this dependency version.
+
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs on every push, pull request, and manual dispatch.
