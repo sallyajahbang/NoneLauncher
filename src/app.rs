@@ -15,16 +15,17 @@ enum Screen {
     Home,
     Worlds,
     Settings,
-    About,
     Developer,
+    About,
 }
 
 impl Screen {
-    const TABS: [(Self, &'static str); 4] = [
-        (Self::Home, "Home"),
-        (Self::Worlds, "Worlds"),
-        (Self::Settings, "Settings"),
-        (Self::About, "About"),
+    const TABS: [(Self, &'static str); 5] = [
+        (Self::Home, "HOME"),
+        (Self::Worlds, "WORLDS"),
+        (Self::Settings, "SETTINGS"),
+        (Self::Developer, "DEV"),
+        (Self::About, "ABOUT"),
     ];
 }
 
@@ -60,56 +61,53 @@ impl eframe::App for RustCraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::Frame::new()
-            .fill(BG)
-            .inner_margin(10.0)
-            .show(ui, |ui| {
-                let available = ui.available_size();
-                // Android phones in landscape often have a very short logical height.
-                // In that case, put navigation in the top row instead of squeezing a
-                // desktop-style drawer and bottom bar into the viewport.
-                let compact_landscape = available.y < 420.0 && available.x > available.y;
-                let content_width = available.x.max(1.0);
-                let bottom_nav_height = if compact_landscape { 0.0 } else { 58.0 };
-                let header_height = if compact_landscape { 44.0 } else { 52.0 };
-                let content_height =
-                    (available.y - header_height - bottom_nav_height - 20.0).max(40.0);
+        // eframe's root UI may inherit a centered layout. Explicitly allocate a
+        // full-size top-left layout; otherwise the phone can show only the header
+        // in the middle of a large empty screen.
+        let available = ui.available_size().max(Vec2::new(1.0, 1.0));
+        ui.allocate_ui_with_layout(
+            available,
+            Layout::top_down(Align::Min),
+            |root| {
+                egui::Frame::new()
+                    .fill(BG)
+                    .inner_margin(egui::Margin::symmetric(14, 10))
+                    .show(root, |body| {
+                        let body_width = body.available_width();
+                        let body_height = body.available_height();
+                        body.set_width(body_width);
+                        body.set_min_height(body_height);
+                        body.with_layout(Layout::top_down(Align::Min), |body| {
+                            self.phone_header(body);
+                            body.add_space(8.0);
 
-                ui.set_min_size(available);
-                ui.vertical(|ui| {
-                    if compact_landscape {
-                        self.compact_landscape_header(ui, content_width);
-                    } else {
-                        self.phone_header(ui, content_width);
-                    }
-
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(content_width, content_height),
-                        Layout::top_down(Align::Min),
-                        |content_ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt("rustcraft-main-content")
-                                .auto_shrink([false, false])
-                                .show(content_ui, |content_ui| {
-                                    content_ui.set_width(content_ui.available_width());
-                                    match self.screen {
-                                        Screen::Home => {
-                                            self.home_screen(content_ui, compact_landscape)
-                                        }
-                                        Screen::Worlds => self.worlds_screen(content_ui),
-                                        Screen::Settings => self.settings_screen(content_ui),
-                                        Screen::About => self.about_screen(content_ui),
-                                        Screen::Developer => self.developer_screen(content_ui),
-                                    }
-                                });
-                        },
-                    );
-
-                    if !compact_landscape {
-                        self.bottom_navigation(ui, content_width);
-                    }
-                });
-            });
+                            let nav_height = 58.0;
+                            let content_height = (body.available_height() - nav_height - 8.0).max(80.0);
+                            body.allocate_ui_with_layout(
+                                Vec2::new(body.available_width(), content_height),
+                                Layout::top_down(Align::Min),
+                                |content| {
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("rustcraft-phone-content")
+                                        .auto_shrink([false, false])
+                                        .show(content, |content| {
+                                            content.set_width(content.available_width());
+                                            match self.screen {
+                                                Screen::Home => self.home_screen(content),
+                                                Screen::Worlds => self.worlds_screen(content),
+                                                Screen::Settings => self.settings_screen(content),
+                                                Screen::Developer => self.developer_screen(content),
+                                                Screen::About => self.about_screen(content),
+                                            }
+                                        });
+                                },
+                            );
+                            body.add_space(6.0);
+                            self.bottom_navigation(body);
+                        });
+                    });
+            },
+        );
     }
 }
 
@@ -129,6 +127,7 @@ impl RustCraftApp {
             style.visuals.override_text_color = Some(TEXT);
             style.spacing.item_spacing = Vec2::new(8.0, 8.0);
             style.spacing.button_padding = Vec2::new(12.0, 8.0);
+            style.spacing.interact_size = Vec2::new(48.0, 48.0);
         });
     }
 
@@ -142,399 +141,176 @@ impl RustCraftApp {
         }
     }
 
-    fn phone_header(&mut self, ui: &mut egui::Ui, width: f32) {
-        ui.horizontal_centered(|ui| {
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("RUSTCRAFT")
-                    .size(19.0)
-                    .strong()
-                    .color(GREEN),
-            );
-            ui.add_space(7.0);
-            ui.label(RichText::new("JAVA 1.21.11").size(10.0).color(MUTED));
+    fn phone_header(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("RUSTCRAFT").size(22.0).strong().color(GREEN));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add_sized(
-                        [60.0, 44.0],
-                        egui::Button::new(RichText::new("DEV").size(11.0)),
-                    )
-                    .clicked()
-                {
-                    self.screen = Screen::Developer;
-                }
+                ui.label(RichText::new("JAVA 1.21.11").size(11.0).color(MUTED));
             });
         });
         ui.separator();
-        ui.set_width(width);
     }
 
-    fn compact_landscape_header(&mut self, ui: &mut egui::Ui, width: f32) {
-        ui.horizontal_centered(|ui| {
-            ui.add_space(3.0);
-            ui.label(
-                RichText::new("RUSTCRAFT")
-                    .size(15.0)
-                    .strong()
-                    .color(GREEN),
-            );
-            ui.add_space(3.0);
-            for (screen, _) in Screen::TABS {
-                let label = match screen {
-                    Screen::Home => "HOME",
-                    Screen::Worlds => "WORLD",
-                    Screen::Settings => "SET",
-                    Screen::About => "INFO",
-                    Screen::Developer => unreachable!("Developer is not in the primary tabs"),
-                };
-                self.top_tab(ui, screen, label);
-            }
-            if ui
-                .add_sized(
-                    [44.0, 34.0],
-                    egui::Button::new(RichText::new("DEV").size(9.0)),
-                )
-                .clicked()
-            {
-                self.screen = Screen::Developer;
-            }
-        });
+    fn bottom_navigation(&mut self, ui: &mut egui::Ui) {
         ui.separator();
-        ui.set_width(width);
-    }
-
-    fn top_tab(&mut self, ui: &mut egui::Ui, target: Screen, label: &str) {
-        let selected = self.screen == target;
-        let text = RichText::new(label)
-            .size(9.0)
-            .color(if selected { TEXT } else { MUTED });
-        let fill = if selected {
-            Color32::from_rgb(48, 76, 54)
-        } else {
-            Color32::TRANSPARENT
-        };
-        if ui
-            .add_sized(
-                [label_width(label), 34.0],
-                egui::Button::new(text).fill(fill),
-            )
-            .clicked()
-        {
-            self.screen = target;
-        }
-    }
-
-    fn bottom_navigation(&mut self, ui: &mut egui::Ui, width: f32) {
-        ui.separator();
+        let width = ui.available_width();
+        let slot_width = (width / Screen::TABS.len() as f32).max(48.0);
         ui.horizontal(|ui| {
-            let gap = ui.spacing().item_spacing.x;
-            let slot_width = ((width - gap * 3.0) / 4.0).max(52.0);
+            ui.spacing_mut().item_spacing.x = 2.0;
             for (screen, label) in Screen::TABS {
                 let selected = self.screen == screen;
                 let color = if selected { TEXT } else { MUTED };
-                let fill = if selected {
-                    Color32::from_rgb(48, 76, 54)
-                } else {
-                    Color32::TRANSPARENT
-                };
-                if ui
-                    .add_sized(
-                        [slot_width, 48.0],
-                        egui::Button::new(RichText::new(label).size(11.0).color(color)).fill(fill),
-                    )
-                    .clicked()
-                {
+                let fill = if selected { Color32::from_rgb(48, 76, 54) } else { Color32::TRANSPARENT };
+                let response = ui.add_sized(
+                    [slot_width - 2.0, 50.0],
+                    egui::Button::new(RichText::new(label).size(9.5).strong().color(color))
+                        .fill(fill)
+                        .corner_radius(12.0),
+                );
+                if response.clicked() {
                     self.screen = screen;
                 }
             }
         });
     }
 
-    fn home_screen(&mut self, ui: &mut egui::Ui, compact_landscape: bool) {
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new("ANDROID NATIVE VOXEL RUNTIME")
-                .size(10.0)
-                .strong()
-                .color(GREEN),
-        );
-        let title = if compact_landscape {
-            "Build worlds with Rust."
-        } else {
-            "Build worlds.\nOne block at a time."
-        };
-        ui.label(
-            RichText::new(title)
-                .size(if compact_landscape { 19.0 } else { 27.0 })
-                .strong(),
-        );
-        if !compact_landscape {
-            ui.label(
-                RichText::new("Independent Java Edition reimplementation · target 1.21.11")
-                    .size(12.0)
-                    .color(MUTED),
-            );
-        }
-
+    fn home_screen(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
+        ui.label(RichText::new("ANDROID NATIVE VOXEL GAME").size(10.0).strong().color(GREEN));
+        ui.add_space(5.0);
+        ui.label(RichText::new("Your world.\nBuilt block by block.").size(29.0).strong());
+        ui.add_space(5.0);
+        ui.label(RichText::new("Independent Rust implementation targeting Java Edition 1.21.11 compatibility.").size(12.0).color(MUTED));
+        ui.add_space(16.0);
+
         egui::Frame::group(ui.style())
             .fill(SURFACE_RAISED)
             .stroke(Stroke::new(1.0, OUTLINE))
-            .corner_radius(14.0)
-            .inner_margin(10.0)
+            .corner_radius(16.0)
+            .inner_margin(12.0)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("VOXEL RENDERER PREVIEW")
-                            .size(10.0)
-                            .strong()
-                            .color(GREEN),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new("wgpu").size(10.0).color(MUTED));
-                    });
-                });
-                ui.add_space(4.0);
-                let preview_height = if compact_landscape { 64.0 } else { 132.0 };
-                let preview_width = ui.available_width().max(80.0);
+                ui.label(RichText::new("WORLD PREVIEW").size(10.0).strong().color(GREEN));
+                ui.add_space(6.0);
                 let (rect, _) = ui.allocate_exact_size(
-                    Vec2::new(preview_width, preview_height),
+                    Vec2::new(ui.available_width(), 150.0),
                     egui::Sense::hover(),
                 );
                 paint_voxel_preview(ui.painter(), rect);
+                ui.add_space(8.0);
+                ui.label(RichText::new("3D chunk renderer is under development.").size(11.0).color(MUTED));
             });
 
-        ui.add_space(8.0);
-        ui.horizontal_wrapped(|ui| {
-            status_chip(ui, "ANDROID ARM64");
-            status_chip(ui, "RUST");
-            status_chip(ui, "SINGLEPLAYER FIRST");
-        });
+        ui.add_space(12.0);
+        ui.label(RichText::new("QUICK ACCESS").size(10.0).strong().color(GREEN));
+        ui.add_space(6.0);
+        if ui.add_sized([ui.available_width(), 50.0], egui::Button::new("  Singleplayer worlds  ›")).clicked() {
+            self.screen = Screen::Worlds;
+        }
+        ui.add_space(6.0);
+        if ui.add_sized([ui.available_width(), 50.0], egui::Button::new("  Runtime settings  ›")).clicked() {
+            self.screen = Screen::Settings;
+        }
     }
 
     fn worlds_screen(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("Worlds");
-        ui.label(RichText::new("Your singleplayer worlds will appear here.").color(MUTED));
-        ui.add_space(14.0);
-        egui::Frame::group(ui.style())
-            .fill(SURFACE)
-            .stroke(Stroke::new(1.0, OUTLINE))
-            .corner_radius(14.0)
-            .inner_margin(16.0)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("No worlds yet").size(18.0).strong());
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("World generation and save/load are planned for Phase 3.")
-                            .size(11.0)
-                            .color(MUTED),
-                    );
-                    ui.add_space(12.0);
-                    if ui
-                        .add_sized(
-                            [ui.available_width().min(260.0), 46.0],
-                            egui::Button::new("Create world · coming soon"),
-                        )
-                        .clicked()
-                    {
-                        self.status = "World creation is planned for Phase 3".to_owned();
-                    }
-                });
+        page_title(ui, "Worlds", "Manage your singleplayer worlds.");
+        card(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("No worlds yet").size(19.0).strong());
+                ui.add_space(5.0);
+                ui.label(RichText::new("World generation and save/load are planned for the next phase.").size(11.0).color(MUTED));
+                ui.add_space(12.0);
+                if ui.add_sized([ui.available_width(), 48.0], egui::Button::new("Create world · coming soon")).clicked() {
+                    self.status = "World creation is planned for the next phase".to_owned();
+                }
             });
+        });
     }
 
     fn settings_screen(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("Settings");
-        ui.label(RichText::new("Runtime options for this Android device.").color(MUTED));
-        ui.add_space(12.0);
-        egui::Frame::group(ui.style())
-            .fill(SURFACE)
-            .stroke(Stroke::new(1.0, OUTLINE))
-            .corner_radius(14.0)
-            .inner_margin(14.0)
-            .show(ui, |ui| {
-                ui.label(RichText::new("VIDEO").size(10.0).strong().color(GREEN));
-                ui.label("Render distance");
-                ui.add(
-                    egui::Slider::new(&mut self.render_distance, 2..=16)
-                        .suffix(" chunks")
-                        .show_value(true),
-                );
-                ui.add_space(8.0);
-                ui.label(RichText::new("DEVELOPER").size(10.0).strong().color(GREEN));
-                if ui
-                    .add_sized(
-                        [ui.available_width(), 44.0],
-                        egui::Button::new("Open runtime diagnostics"),
-                    )
-                    .clicked()
-                {
-                    self.screen = Screen::Developer;
-                }
-            });
+        page_title(ui, "Settings", "Tune RustCraft for this Android device.");
+        card(ui, |ui| {
+            section_label(ui, "VIDEO");
+            ui.label("Render distance");
+            ui.add(egui::Slider::new(&mut self.render_distance, 2..=16).suffix(" chunks"));
+            ui.add_space(8.0);
+            section_label(ui, "APPLICATION");
+            ui.label(RichText::new("Platform: Android ARM64").color(MUTED));
+            ui.label(RichText::new("Renderer: wgpu").color(MUTED));
+        });
     }
 
     fn developer_screen(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("Developer diagnostics");
-        ui.label(RichText::new("Live runtime information · no floating overlay").color(MUTED));
-        ui.add_space(12.0);
-        egui::Frame::group(ui.style())
-            .fill(SURFACE)
-            .stroke(Stroke::new(1.0, OUTLINE))
-            .corner_radius(14.0)
-            .inner_margin(14.0)
-            .show(ui, |ui| {
-                diagnostic_row(ui, "FPS", &format!("{:.1}", self.fps));
-                diagnostic_row(
-                    ui,
-                    "Frame time",
-                    &format!("{:.2} ms", 1000.0 / self.fps.max(0.1)),
-                );
-                diagnostic_row(
-                    ui,
-                    "Uptime",
-                    &format!("{:.1} s", self.started.elapsed().as_secs_f32()),
-                );
-                diagnostic_row(
-                    ui,
-                    "Render distance",
-                    &format!("{} chunks", self.render_distance),
-                );
-                diagnostic_row(ui, "Graphics", "wgpu / Vulkan where available");
-                diagnostic_row(ui, "World", "Not initialized");
-                diagnostic_row(ui, "Platform", "Android ARM64");
-            });
+        page_title(ui, "Developer", "Runtime diagnostics and engine status.");
+        card(ui, |ui| {
+            diagnostic_row(ui, "FPS", &format!("{:.1}", self.fps));
+            diagnostic_row(ui, "Frame time", &format!("{:.2} ms", 1000.0 / self.fps.max(0.1)));
+            diagnostic_row(ui, "Uptime", &format!("{:.1} s", self.started.elapsed().as_secs_f32()));
+            diagnostic_row(ui, "Render distance", &format!("{} chunks", self.render_distance));
+            diagnostic_row(ui, "Graphics", "wgpu / Vulkan where available");
+            diagnostic_row(ui, "World", "Not initialized");
+            diagnostic_row(ui, "Platform", "Android ARM64");
+        });
         ui.add_space(10.0);
         ui.label(RichText::new(&self.status).size(11.0).color(MUTED));
     }
 
     fn about_screen(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("About RustCraft");
-        egui::Frame::group(ui.style())
-            .fill(SURFACE)
-            .stroke(Stroke::new(1.0, OUTLINE))
-            .corner_radius(14.0)
-            .inner_margin(14.0)
-            .show(ui, |ui| {
-                ui.label(RichText::new("RustCraft").size(20.0).strong().color(GREEN));
-                ui.label(
-                    "An independent Rust implementation project targeting Minecraft Java Edition 1.21.11 compatibility.",
-                );
-                ui.add_space(8.0);
-                diagnostic_row(ui, "Version", "0.1.0 · foundation build");
-                diagnostic_row(ui, "Runtime", "Rust + eframe + egui");
-                diagnostic_row(ui, "Renderer", "wgpu");
-                diagnostic_row(ui, "Target", "Android ARM64 only");
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(
-                        "Not affiliated with Mojang or Microsoft. No proprietary Minecraft code or assets are bundled.",
-                    )
-                    .size(11.0)
-                    .color(MUTED),
-                );
-            });
-    }
-}
-
-fn label_width(label: &str) -> f32 {
-    match label {
-        "HOME" => 44.0,
-        "WORLD" => 48.0,
-        "SET" => 36.0,
-        "INFO" => 40.0,
-        _ => 44.0,
-    }
-}
-
-fn status_chip(ui: &mut egui::Ui, text: &str) {
-    egui::Frame::new()
-        .fill(Color32::from_rgb(31, 48, 35))
-        .stroke(Stroke::new(1.0, OUTLINE))
-        .corner_radius(20.0)
-        .inner_margin(egui::Margin::symmetric(9, 5))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).size(9.0).strong().color(GREEN));
+        page_title(ui, "About RustCraft", "An independent native voxel game project.");
+        card(ui, |ui| {
+            ui.label(RichText::new("RustCraft").size(21.0).strong().color(GREEN));
+            diagnostic_row(ui, "Version", "0.1.0 · foundation build");
+            diagnostic_row(ui, "Runtime", "Rust + egui");
+            diagnostic_row(ui, "Renderer", "wgpu");
+            diagnostic_row(ui, "Target", "Android ARM64 only");
+            ui.add_space(8.0);
+            ui.label(RichText::new("Not affiliated with Mojang or Microsoft. No proprietary Minecraft code or assets are bundled.").size(11.0).color(MUTED));
         });
+    }
+}
+
+fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
+    ui.add_space(8.0);
+    ui.heading(title);
+    ui.label(RichText::new(subtitle).size(12.0).color(MUTED));
+    ui.add_space(14.0);
+}
+
+fn section_label(ui: &mut egui::Ui, label: &str) {
+    ui.label(RichText::new(label).size(10.0).strong().color(GREEN));
+}
+
+fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::group(ui.style())
+        .fill(SURFACE)
+        .stroke(Stroke::new(1.0, OUTLINE))
+        .corner_radius(16.0)
+        .inner_margin(14.0)
+        .show(ui, content);
 }
 
 fn diagnostic_row(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(label).size(11.0).color(MUTED));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(
-                RichText::new(value)
-                    .size(11.0)
-                    .monospace()
-                    .color(TEXT),
-            );
+            ui.label(RichText::new(value).size(11.0).monospace().color(TEXT));
         });
     });
     ui.separator();
 }
 
 fn paint_voxel_preview(painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_filled(rect, 8.0, Color32::from_rgb(18, 31, 22));
-    painter.text(
-        rect.left_top() + Vec2::new(8.0, 6.0),
-        egui::Align2::LEFT_TOP,
-        "PROCEDURAL PREVIEW",
-        FontId::monospace(9.0),
-        Color32::from_rgb(143, 174, 146),
-    );
-
-    let center = egui::pos2(rect.center().x, rect.center().y + 10.0);
-    let scale = (rect.height() * 0.42).clamp(11.0, 43.0);
-    let project = |x: f32, y: f32, z: f32| -> egui::Pos2 {
-        egui::pos2(
-            center.x + (x - z) * scale * 0.72,
-            center.y + (x + z) * scale * 0.30 - y * scale,
-        )
-    };
-
-    let cubes = [
-        (-1.0, 0.0, -1.0),
-        (0.0, 0.0, -1.0),
-        (1.0, 0.0, -1.0),
-        (-1.0, 0.0, 0.0),
-        (0.0, 0.0, 0.0),
-        (1.0, 0.0, 0.0),
-        (-1.0, 0.0, 1.0),
-        (0.0, 0.0, 1.0),
-        (1.0, 0.0, 1.0),
-        (0.0, 1.0, 0.0),
-    ];
-
-    for (x, y, z) in cubes {
-        let p000 = project(x, y, z);
-        let p100 = project(x + 1.0, y, z);
-        let p010 = project(x + 1.0, y + 1.0, z);
-        let p001 = project(x, y + 1.0, z);
-        let p111 = project(x + 1.0, y + 1.0, z + 1.0);
-        let p011 = project(x, y + 1.0, z + 1.0);
-        let p110 = project(x, y, z + 1.0);
-        let outline = Stroke::new(1.0, Color32::from_rgb(35, 59, 38));
-
-        painter.add(egui::Shape::convex_polygon(
-            vec![p001, p010, p111, p011],
-            Color32::from_rgb(102, 166, 91),
-            outline,
-        ));
-        painter.add(egui::Shape::convex_polygon(
-            vec![p010, p100, p110, p111],
-            Color32::from_rgb(74, 119, 68),
-            outline,
-        ));
-        painter.add(egui::Shape::convex_polygon(
-            vec![p000, p100, p010, p001],
-            Color32::from_rgb(57, 94, 57),
-            outline,
-        ));
+    painter.rect_filled(rect, 10.0, Color32::from_rgb(18, 31, 22));
+    painter.text(rect.left_top() + Vec2::new(10.0, 8.0), egui::Align2::LEFT_TOP, "PROCEDURAL VOXEL PREVIEW", FontId::monospace(9.0), Color32::from_rgb(143, 174, 146));
+    let center = egui::pos2(rect.center().x, rect.center().y + 14.0);
+    let scale = (rect.height() * 0.38).clamp(12.0, 48.0);
+    let project = |x: f32, y: f32, z: f32| egui::pos2(center.x + (x - z) * scale * 0.72, center.y + (x + z) * scale * 0.30 - y * scale);
+    let cubes = [(-1.0,0.0,-1.0),(0.0,0.0,-1.0),(1.0,0.0,-1.0),(-1.0,0.0,0.0),(0.0,0.0,0.0),(1.0,0.0,0.0),(-1.0,0.0,1.0),(0.0,0.0,1.0),(1.0,0.0,1.0),(0.0,1.0,0.0)];
+    for (x,y,z) in cubes {
+        let p000=project(x,y,z); let p100=project(x+1.0,y,z); let p010=project(x+1.0,y+1.0,z); let p001=project(x,y+1.0,z); let p111=project(x+1.0,y+1.0,z+1.0); let p011=project(x,y+1.0,z+1.0); let p110=project(x,y,z+1.0);
+        let stroke=Stroke::new(1.0,Color32::from_rgb(35,59,38));
+        painter.add(egui::Shape::convex_polygon(vec![p001,p010,p111,p011],Color32::from_rgb(102,166,91),stroke));
+        painter.add(egui::Shape::convex_polygon(vec![p010,p100,p110,p111],Color32::from_rgb(74,119,68),stroke));
+        painter.add(egui::Shape::convex_polygon(vec![p000,p100,p010,p001],Color32::from_rgb(57,94,57),stroke));
     }
 }

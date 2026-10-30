@@ -1,31 +1,24 @@
 # Android UI layout
 
-RustCraft is designed for Android phones first. The UI uses egui/eframe and adapts to the current logical viewport size.
+RustCraft is an Android-only application. The UI is rendered by egui through eframe/wgpu.
 
-## Portrait
+## Layout rules
 
-- A compact app bar with the RustCraft name, Java compatibility target, and Developer shortcut.
-- One-column scrollable page content. Cards use the available width instead of fixed desktop columns.
-- Four large bottom navigation targets: Home, Worlds, Settings, and About.
-- Developer diagnostics are a normal screen, never a floating window that covers gameplay or navigation.
+- The app root explicitly allocates the complete available viewport with a top-left, top-down layout. This is important because eframe's root UI can inherit a centered layout; without overriding it, the content may collapse to a single row centered vertically.
+- The main content is vertically scrollable and reserves space for persistent bottom navigation.
+- Primary navigation has five large touch targets: Home, Worlds, Settings, Dev, and About.
+- Developer diagnostics are a normal destination, not a floating overlay.
+- The app does not request immersive fullscreen. Android system bars remain visible.
+- Controls use at least 48 logical points for their interaction height where practical.
 
-## Landscape
+## Current screens
 
-- The bottom navigation is replaced by a compact top navigation row to preserve vertical room.
-- The content remains scrollable and the voxel preview height is reduced.
-- Long content can scroll instead of being clipped by a fixed desktop panel.
+- **Home:** project status, voxel preview placeholder, and quick links.
+- **Worlds:** singleplayer world list placeholder.
+- **Settings:** render-distance control and runtime information.
+- **Dev:** FPS, frame time, uptime, render distance, graphics backend, world status, and platform.
+- **About:** build and project information.
 
-## Android system UI
+## Known limitations
 
-- The app does not request immersive fullscreen.
-- Status and navigation bars remain visible with a dark matching theme.
-- For target SDK 35, the API 35 resource opts out of enforced edge-to-edge layout so the app surface is not drawn behind system bars on Android 15.
-- The activity supports portrait and landscape rotation.
-
-## Interaction
-
-- Buttons and navigation use touch-sized hit areas (approximately 44–48 logical points).
-- Diagnostics live under Developer and can also be opened from Settings.
-- No hover-only action is required.
-
-The Android screen should still be checked on physical devices at both portrait and landscape orientations. egui points are logical UI units; final sizing depends on device density and the Android window viewport.
+The voxel preview is currently a UI-painted placeholder, not the dedicated 3D chunk renderer. World creation and persistence are not implemented yet. Validate touch behavior and logical sizing on a real Android device after each UI change.
