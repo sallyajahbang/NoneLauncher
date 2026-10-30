@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RustCraft"
+rootProject.name = "RustCube"
 include(":app")

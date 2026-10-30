@@ -1,9 +1,6 @@
-.gradle/
-.idea/
-**/build/
-**/.cxx/
-local.properties
-*.iml
-.DS_Store
-app/src/main/jniLibs/*
-!app/src/main/jniLibs/.gitkeep
+/target
+/android/.gradle
+/android/build
+/android/app/build
+/android/app/src/main/jniLibs
+/android/local.properties

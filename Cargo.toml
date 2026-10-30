@@ -1,18 +1,23 @@
-[workspace]
-resolver = "2"
-members = [
-    "crates/game-core",
-    "crates/android-bridge",
-]
-
-[workspace.package]
+[package]
+name = "cube"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+
+# Dibangun sebagai shared library (.so) yang dimuat oleh NativeActivity Android.
+[lib]
+name = "cube"
+crate-type = ["cdylib"]
+
+[dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+wgpu = "0.20"
+pollster = "0.3"
+glam = "0.27"
+bytemuck = { version = "1", features = ["derive"] }
+log = "0.4"
+android_logger = "0.14"
 
 [profile.release]
-codegen-units = 1
-lto = true
 opt-level = 3
-panic = "abort"
-strip = true
+lto = "thin"
+codegen-units = 1
