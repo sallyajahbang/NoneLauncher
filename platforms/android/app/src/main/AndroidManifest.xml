@@ -1,20 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:glEsVersion="0x00030000" android:required="false" />
     <uses-feature android:name="android.hardware.vulkan.level" android:required="false" />
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
         android:hasCode="false"
         android:label="RustCraft"
-        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:supportsRtl="true"
+        android:theme="@style/RustCraftTheme"
         android:usesCleartextTraffic="false">
         <activity
             android:name="android.app.NativeActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density"
             android:exported="true"
             android:label="RustCraft"
-            android:screenOrientation="landscape">
+            android:resizeableActivity="true"
+            android:screenOrientation="unspecified">
             <meta-data android:name="android.app.lib_name" android:value="rustcraft" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

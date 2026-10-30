@@ -1,21 +1,27 @@
-# CI log diagnosis and fixes
+# CI / Android UI update notes
 
-The uploaded GitHub Actions logs showed two root causes in the starter source:
+This revision moves RustCraft from its previous desktop-shaped application shell to an Android-only application.
 
-1. `src/app.rs` used the pre-0.34 egui/eframe API while Cargo resolved eframe/egui 0.37:
-   - `eframe::App::update` was replaced by `logic` + required `ui` methods.
-   - `TopBottomPanel` and `SidePanel` were unified into `egui::Panel`.
-   - Panels and `CentralPanel` now receive a mutable `egui::Ui` and use `show`.
-   - `Context::style` / `set_style` were renamed to `global_style` / `set_global_style`; this app uses `global_style_mut`.
-2. Linux stopped at `cargo fmt --all -- --check` because `src/app.rs` was not rustfmt-formatted.
+## Android UI changes
 
-The source in this patch migrates the UI to the eframe 0.37 API, formats the app source, removes an unused local, and updates the build notes. The GitHub Actions YAML itself successfully completed checkout, toolchain setup, dependency resolution, and Android SDK/NDK setup in the provided logs; the observed failures occurred later in source compilation or formatting.
+- Removed the fixed 190-point desktop sidebar.
+- Added a compact top-row navigation mode for short landscape viewports.
+- Added bottom navigation for portrait and taller layouts.
+- Made all primary content single-column and vertically scrollable.
+- Removed the floating runtime diagnostics window that covered the home screen.
+- Moved FPS, frame time, uptime, render distance, graphics backend, and world status to a dedicated Developer Diagnostics screen.
+- Removed the forced fullscreen viewport so Android system bars are not intentionally covered by app content.
+- Changed the Android Activity orientation from forced landscape to sensor orientation.
 
-## Validation performed in the patch environment
+## Android-only build changes
 
-- `Cargo.toml` parsed successfully with Python `tomllib`.
-- Both GitHub Actions workflow files parsed successfully as YAML.
-- Regression checks confirmed that the old `App::update`, `SidePanel`, and `TopBottomPanel` calls are absent from `src/app.rs`.
-- A basic Rust delimiter smoke check passed.
+- Removed the desktop binary entry point and `run_desktop` function.
+- Removed desktop-only `eframe` window backend features.
+- Kept the Android NativeActivity + ARM64 target.
+- Replaced the multi-platform CI matrix with a single Android ARM64 APK job.
+- Replaced multi-platform release jobs with one Android release APK job.
+- Updated README and build documentation to describe Android-only development.
 
-A full `cargo fmt`, `cargo check`, desktop build, or Android APK build was not run in this environment because the Rust toolchain and Android SDK are not installed here. The next authoritative compile result will be the next GitHub Actions run.
+## Validation limitation
+
+The current authoring environment does not have Rust/Cargo or the Android SDK installed. YAML and XML are validated, source structure is inspected, and ZIP integrity is checked; the next GitHub Actions run remains the authoritative Rust compile and APK build test.

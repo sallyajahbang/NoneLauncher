@@ -1,96 +1,112 @@
 # RustCraft
 
-**RustCraft** is an independent Rust voxel-game/reimplementation research project. The compatibility baseline is **Minecraft Java Edition 1.21.11**; the initial gameplay priority is singleplayer. It targets Android ARM64, Windows x86_64, and Linux x86_64.
+**RustCraft** is an independent Rust-native voxel game project targeting compatibility with Minecraft Java Edition **1.21.11**. Development is currently **Android ARM64 only**. The first gameplay target is singleplayer.
 
-> This repository is not affiliated with Mojang Studios or Microsoft. It contains no Minecraft JAR, proprietary source code, textures, sounds, models, or other proprietary game assets. Use assets you created yourself or that you are licensed to use. Compatibility with Java Edition is a long-term engineering goal, not a claim that the current prototype can load or run Minecraft worlds.
+> RustCraft is not affiliated with Mojang or Microsoft. This project does not bundle proprietary Minecraft code or game assets. Users must provide assets they are legally entitled to use.
 
-## Current scope: Phase 0 + Phase 1 foundation
+## Current scope
 
-- Rust 2024 application foundation (single package initially; split into crates as engine boundaries stabilize).
-- `eframe` + `egui` UI rendered through the `wgpu` backend.
-- Desktop executable for Windows and Linux.
-- Android `NativeActivity` entry point for ARM64, with no Kotlin UI layer.
-- Home, Worlds, Settings, About screens.
-- Runtime diagnostics overlay (FPS estimate, uptime, placeholder renderer/world status).
-- Isometric voxel preview drawn as egui primitives to validate layout and UI composition.
+- Android NativeActivity entry point written in Rust.
+- `eframe` / `egui` application UI rendered through `wgpu`.
+- Android-first responsive layout for portrait and compact landscape.
+- Touch-sized controls, one-column scrolling content, bottom navigation in portrait, compact top navigation in landscape.
+- Diagnostics moved into a dedicated Developer screen instead of a floating overlay.
+- Home, Worlds, Settings, About, and Developer Diagnostics screens.
+- Android system bars are left visible; the app does not force immersive fullscreen.
+- ARM64 APK build through Gradle + `cargo-ndk`.
+- GitHub Actions CI and unsigned release APK workflow.
 
-### Important renderer status
+The current voxel graphic is a UI preview, not yet the dedicated 3D chunk renderer. World generation, Anvil/NBT loading, gameplay, and Java protocol are not implemented yet.
 
-The current preview is **not yet a dedicated 3D voxel GPU mesh pipeline**. `eframe` uses `egui-wgpu`/`wgpu` to render the application UI, while the isometric block preview is composed from egui shapes. The next rendering milestone is a custom `wgpu` render pipeline (WGSL shaders, vertex/index buffers, depth buffer, camera matrices) for actual 3D cubes and chunk meshes. This separation is intentional: it avoids pretending that the chunk renderer or Minecraft world runtime already exists.
+## Tech stack
 
-## Requirements
+| Component | Technology |
+|---|---|
+| Language | Rust 2024 |
+| Android entry point | NativeActivity + winit |
+| UI | egui / eframe |
+| GPU backend | wgpu |
+| Native ABI | Android ARM64 (`arm64-v8a`) |
+| Minimum Android | API 26 |
+| Android compile/target SDK | 35 |
+| Native build | cargo-ndk + NDK 27.2 |
+| Android packaging | Gradle 8.11.1 + AGP 8.9.2 |
 
-- Rust stable (2024 edition; use a current stable toolchain).
-- Desktop Linux: X11/Wayland, Vulkan, OpenSSL, and ALSA development libraries. Ubuntu/Debian users can install the packages listed in [docs/BUILD.md](docs/BUILD.md).
+## Android UI notes
 
-- Android: Android SDK + NDK, Java 17, `cargo-ndk`, and the `aarch64-linux-android` Rust target.
+See [`docs/ANDROID_UI.md`](docs/ANDROID_UI.md) for the phone-first layout, landscape behavior, touch targets, and system-bar handling.
 
-## Desktop build
+## Build locally
 
-```bash
-cargo run
-# or
-cargo build --release
-```
+Requirements:
 
-## Android ARM64 build
+- Rust stable toolchain
+- Android SDK Platform 35 and Build Tools 35.0.0
+- Android NDK 27.2.12479018
+- JDK 17
+- Gradle 8.11.1
+- `cargo-ndk`
 
-Install the Android SDK/NDK, JDK 17, Rust Android target, and cargo-ndk:
+Install the Rust target and helper:
 
 ```bash
 rustup target add aarch64-linux-android
 cargo install cargo-ndk --locked
 ```
 
-Build the APK from the Gradle project (JDK 17, Android SDK 35, Build Tools 35.0.0, NDK 27.2.12479018, and Gradle 8.11.1):
+Set `ANDROID_NDK_HOME` to the installed NDK directory. Then build the APK:
 
 ```bash
 cd platforms/android
-gradle --no-daemon assembleDebug
+gradle assembleDebug
 ```
 
-The Gradle `preBuild` task invokes `cargo-ndk` with Android API 26 and places `librustcraft.so` under `app/src/main/jniLibs/arm64-v8a`. The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+APK output:
 
-## Project layout
+```text
+platforms/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+The Gradle `preBuild` task invokes `cargo-ndk` and places `librustcraft.so` in `app/src/main/jniLibs/arm64-v8a`.
+
+## GitHub Actions
+
+`.github/workflows/ci.yml` builds the Android ARM64 debug APK on every push, pull request, or manual dispatch. Download the APK from the workflow run's **Artifacts** section.
+
+`.github/workflows/release.yml` builds an Android ARM64 release APK when manually dispatched or when a `v*` tag is pushed. The generated APK is currently **unsigned**; configure a signing keystore through GitHub Actions secrets before distributing it as a production release.
+
+## Repository layout
 
 ```text
 rustcraft/
-├── Cargo.toml
-├── rust-toolchain.toml
+├── .github/workflows/
+│   ├── ci.yml
+│   └── release.yml
+├── docs/
+├── platforms/android/
+│   ├── app/
+│   │   └── src/main/
+│   │       ├── AndroidManifest.xml
+│   │       ├── jniLibs/arm64-v8a/
+│   │       └── res/values/styles.xml
+│   ├── build.gradle.kts
+│   └── settings.gradle.kts
 ├── src/
-│   ├── lib.rs          # desktop + Android entry points
-│   ├── main.rs         # desktop binary
-│   └── app.rs          # egui app, screens, debug overlay, voxel preview
-├── platforms/android/  # NativeActivity + Gradle build configuration
-├── docs/               # architecture and implementation notes
-└── .github/workflows/  # Linux, Windows, Android CI
+│   ├── app.rs
+│   └── lib.rs
+├── Cargo.toml
+└── rust-toolchain.toml
 ```
 
-## Next implementation steps
+## Roadmap
 
-1. Add a real custom `wgpu` 3D pipeline and camera controls.
-2. Add a single 16×16×16 test chunk and cube mesh generation.
-3. Add block registry and face/greedy meshing.
-4. Add worker-thread chunk generation and streaming.
-5. Add NBT reader and Anvil region reader for the selected Java version.
-6. Add independent world generation, player controller, collision, block interaction, and save/load.
+1. Android app shell and responsive UI.
+2. Dedicated wgpu 3D renderer with camera, depth buffer, WGSL shaders, and GPU mesh buffers.
+3. Voxel chunk representation and greedy meshing.
+4. Singleplayer world generation, player movement, collision, and block interaction.
+5. NBT / Anvil reading and Java Edition compatibility adapters.
+6. Save/load, inventory, crafting, entities, and further gameplay systems.
 
 ## License
 
-The starter code is dual-licensed under MIT OR Apache-2.0. Third-party crates retain their own licenses. No Minecraft assets are included.
-
-## egui / eframe version compatibility
-
-This project currently targets `eframe` / `egui` 0.37. The application uses the
-0.34+ API split (`App::logic` + `App::ui`), `egui::Panel`, `CentralPanel::show`,
-and the `Context::global_style_mut` theme API. Do not paste examples written for
-pre-0.34 egui without migrating their API calls.
-
-## GitHub Actions builds
-
-The CI workflow runs on every push, pull request, and manual dispatch. It builds
-Linux and Windows desktop binaries and an Android ARM64 debug APK. The generated
-files are uploaded to the workflow run as downloadable artifacts. Tag a commit
-with `v*` or manually run the release workflow to build release-mode outputs.
-
-See [docs/BUILD.md](docs/BUILD.md) for the local build requirements and commands.
+The RustCraft source is dual-licensed under MIT OR Apache-2.0. See `LICENSE-MIT.txt` and `LICENSE-APACHE.txt`.

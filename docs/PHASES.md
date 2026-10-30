@@ -1,49 +1,13 @@
-# Implementation phases
+# Development phases
 
-## Phase 0 — Foundation
+RustCraft development is Android ARM64 only. Initial gameplay scope is singleplayer.
 
-- [x] Cargo package and Rust 2024 configuration
-- [x] Shared desktop/Android app entry architecture
-- [x] Android NativeActivity manifest and ARM64 Gradle integration
-- [x] CI jobs for Linux, Windows and Android ARM64
-- [x] UI shell and runtime diagnostics
+1. Android shell, system bar handling, and responsive phone UI.
+2. Dedicated wgpu renderer: camera, depth buffer, WGSL shaders, and GPU mesh buffers.
+3. Voxel chunk representation and greedy meshing.
+4. Singleplayer world generation, player movement, collision, and block interaction.
+5. NBT / Anvil reading and Java Edition compatibility adapters for 1.21.11.
+6. Save/load, inventory, crafting, entities, and further gameplay systems.
+7. Android profiling, thermal/memory optimization, and release packaging.
 
-## Phase 1 — UI and GPU application foundation
-
-- [x] egui screens and navigation
-- [x] wgpu-backed UI renderer through eframe/egui-wgpu
-- [x] Resizable desktop viewport and Android fullscreen viewport
-- [x] Isometric voxel layout preview
-- [ ] Dedicated WGSL 3D cube pipeline
-- [ ] Depth-tested camera and actual GPU vertex/index buffers
-- [ ] GPU adapter/device diagnostics
-
-## Phase 2 — Voxel renderer
-
-- [ ] 16×16×16 chunk-section representation
-- [ ] Block registry and block states
-- [ ] Face culling and greedy meshing
-- [ ] Chunk visibility and frustum culling
-- [ ] GPU buffer pooling and asynchronous uploads
-
-## Phase 3 — Singleplayer world
-
-- [ ] World metadata and seed handling
-- [ ] Terrain/biome generation
-- [ ] Chunk streaming and persistence
-- [ ] Player movement and collision
-- [ ] Block breaking/placing
-
-## Phase 4 — Java Edition compatibility
-
-- [ ] NBT parser and tests
-- [ ] Anvil region reader/writer
-- [ ] 1.21.11 data-version adapter
-- [ ] Block/item/entity mapping
-- [ ] Resource-pack importer
-
-## Phase 5+ — Gameplay and multiplayer
-
-- [ ] Inventory, crafting, entities, lighting and audio
-- [ ] Java protocol adapter and server interoperability
-- [ ] Performance, memory and device compatibility validation
+Desktop targets and multiplayer are explicitly out of scope for the current development cycle.

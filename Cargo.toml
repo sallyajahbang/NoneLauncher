@@ -3,38 +3,29 @@ name = "rustcraft"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
-description = "Independent Rust voxel game runtime foundation"
+description = "Android-native independent Rust voxel game runtime foundation"
 license = "MIT OR Apache-2.0"
 
 [lib]
 name = "rustcraft"
-crate-type = ["rlib", "cdylib"]
-
-[[bin]]
-name = "rustcraft"
-path = "src/main.rs"
+crate-type = ["cdylib"]
 
 [dependencies]
-anyhow = "1.0"
 log = "0.4"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-bytemuck = { version = "1.25", features = ["derive"] }
-wgpu = "30"
-glam = { version = "0.30", features = ["bytemuck"] }
+android_logger = "0.15"
+winit = { version = "0.30.13", default-features = false, features = ["android-native-activity"] }
 
-# eframe uses egui + egui-wgpu; wgpu is the actual GPU backend.
+# eframe provides egui and its wgpu renderer. Only the Android native
+# activity backend is enabled; desktop window backends are intentionally off.
 eframe = { version = "0.37", default-features = false, features = [
     "wgpu",
     "default_fonts",
-    "wayland",
-    "x11",
     "android-native-activity",
 ] }
 
-[target.'cfg(target_os = "android")'.dependencies]
-winit = { version = "0.30.13", default-features = false, features = ["android-native-activity"] }
-android_logger = "0.15"
+# Foundation dependencies reserved for the upcoming voxel renderer/chunk work.
+bytemuck = { version = "1.25", features = ["derive"] }
+glam = { version = "0.30", features = ["bytemuck"] }
 
 [profile.dev]
 opt-level = 1
@@ -63,5 +54,3 @@ label = "RustCraft"
 name = "android.hardware.vulkan.level"
 required = false
 
-[[package.metadata.android.uses_permission]]
-name = "android.permission.INTERNET"

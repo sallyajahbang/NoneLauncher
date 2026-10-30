@@ -1,24 +1,35 @@
-# Architecture notes
+# Architecture
 
-## Platform boundary
+RustCraft is an Android-only Rust application. The current target ABI is `arm64-v8a`; there are no Windows or Linux app targets or desktop entry points.
 
-The initial application uses eframe for a shared Rust UI and wgpu-backed rendering. Android uses winit's NativeActivity glue through eframe's `android-native-activity` feature; desktop uses eframe's native runner. Game logic must remain independent of platform APIs.
+## Runtime
 
-## Planned crate split
+```text
+Android NativeActivity
+        |
+        v
+Rust android_main
+        |
+        v
+ eframe / egui application
+        |
+        v
+     wgpu renderer
+```
 
-As Phase 1 stabilizes, split the single application crate into:
+The app shell owns Android lifecycle integration and UI state. The game engine modules will remain Rust crates/modules and will be added incrementally.
 
-- `rc-core`: IDs, coordinates, errors, configuration.
-- `rc-renderer`: wgpu device resources, camera, pipelines, mesh buffers.
-- `rc-voxel`: block/state definitions and voxel mesh generation.
-- `rc-world`: chunks, sections, world streaming.
-- `rc-compat-java`: Java Edition version adapters, NBT and Anvil compatibility.
-- `rc-client`: platform entry points, UI, input and game orchestration.
+## UI layout
 
-## Renderer ownership
+- Portrait: app header, scrollable one-column content, bottom navigation.
+- Compact landscape: compact top navigation, scrollable content, no bottom navigation.
+- Developer diagnostics: separate screen, not a floating overlay.
+- System bars: not immersive fullscreen; themed to match the app background.
 
-The renderer owns GPU resources and consumes immutable render snapshots. The world owns authoritative chunk/block data. A world mutation marks affected chunk meshes dirty; worker jobs build replacement CPU meshes; the render thread uploads completed meshes.
+## Planned game systems
 
-## Compatibility boundary
+The next stages add a dedicated 3D wgpu renderer, chunk and block storage, greedy meshing, world generation, physics, singleplayer gameplay, and Java Edition data compatibility.
 
-Java Edition compatibility must be versioned. Do not scatter version-specific constants through gameplay code. Put data-version, protocol-version, block-state mapping, NBT layout and chunk decoding behind explicit adapters. The first adapter targets Java Edition 1.21.11, and should be validated against user-owned test worlds and protocol fixtures.
+## Platform policy
+
+Only Android ARM64 is supported during this project phase. Keep the workspace and dependency feature set free of desktop window backends until Android gameplay is stable. This is an intentional focus decision, not a claim that the code can never be ported later.
