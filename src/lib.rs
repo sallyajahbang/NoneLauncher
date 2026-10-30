@@ -269,7 +269,9 @@ impl Gfx {
                 &wgpu::DeviceDescriptor {
                     label: Some("device"),
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::downlevel_defaults(),
+                    // Pakai limit asli GPU; downlevel_defaults membatasi texture 2048px,
+                    // sedangkan layar 1080x2340 butuh lebih dari itu.
+                    required_limits: adapter.limits(),
                 },
                 None,
             )
