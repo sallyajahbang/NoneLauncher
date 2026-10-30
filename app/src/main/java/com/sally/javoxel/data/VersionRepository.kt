@@ -87,7 +87,8 @@ object VersionRepository {
                 sha1 = artifact.optString("sha1").ifEmpty { null },
             )
         }
-        return result
+        // Mojang kadang mencantumkan artifact yang sama lebih dari sekali (mis. lwjgl).
+        return result.distinctBy { it.path }
     }
 
     /**

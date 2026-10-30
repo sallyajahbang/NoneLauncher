@@ -27,7 +27,8 @@ class JreInstaller(
     /** Mengembalikan folder JAVA_HOME. Ekstrak hanya jika belum ada. */
     fun ensureJre(major: Int): File {
         val home = File(baseDir, "java-$major")
-        if (File(home, "bin/java").exists()) {
+        // Ekstrak ulang kalau class library belum ada (JRE lama yang hanya berisi bin).
+        if (File(home, "bin/java").exists() && hasClassLibrary(home)) {
             log("JRE $major sudah ada")
             return home
         }
@@ -56,6 +57,10 @@ class JreInstaller(
         log("JRE $major siap")
         return home
     }
+
+    /** rt.jar untuk JRE 8, file modules untuk JRE 9 ke atas. */
+    private fun hasClassLibrary(home: File): Boolean =
+        home.walkTopDown().maxDepth(3).any { it.isFile && (it.name == "rt.jar" || it.name == "modules") }
 
     private fun extract(input: InputStream, dest: File) {
         dest.mkdirs()

@@ -41,6 +41,18 @@ object JvmLauncher {
         AppLog.i("libjli: ${jli.path}")
         AppLog.i("Argumen JVM (${args.size}): ${args.joinToString(" ")}")
 
+        // Tanpa class library, JVM gagal start lalu memanggil exit() dengan thread masih hidup,
+        // yang berujung crash. Cek dulu supaya errornya jelas dan tidak crash.
+        val classLib = findClassLibrary(javaHome)
+        if (classLib == null) {
+            val msg = "Class library JRE $javaMajor tidak ditemukan (rt.jar atau modules). " +
+                "Isi JRE di assets hanya binary. Tambahkan universal.tar.xz yang berisi lib/ " +
+                "di assets/jre/jre-$javaMajor/, lalu tekan \"Siapkan Java\" lagi."
+            AppLog.e(msg)
+            error(msg)
+        }
+        AppLog.i("Class library: ${classLib.path}")
+
         redirectOutput(AppLog.latestPath())
         return launchJvm(
             jliPath = jli.path,
@@ -49,6 +61,12 @@ object JvmLauncher {
             args = args.toTypedArray(),
         )
     }
+
+    /** JRE 8 memakai rt.jar, JRE 9 ke atas memakai file modules. */
+    private fun findClassLibrary(javaHome: File): File? =
+        javaHome.walkTopDown()
+            .maxDepth(3)
+            .firstOrNull { it.isFile && (it.name == "rt.jar" || it.name == "modules") }
 
     /** Lokasi libjli.so berbeda antar JDK: lib/libjli.so (9+) atau lib/<arch>/jli/libjli.so (8). */
     private fun findLibJli(javaHome: File): File? =
