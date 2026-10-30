@@ -1,5 +1,6 @@
 package com.sally.javoxel.runtime
 
+import com.sally.javoxel.util.AppLog
 import java.io.File
 
 /**
@@ -7,14 +8,18 @@ import java.io.File
  * Native-nya ada di app/src/main/cpp/javoxel_jvm.c (lib: libjavoxel_jvm.so).
  *
  * [launch] memblokir sampai JVM selesai. Jalankan dari thread IO.
+ * Output JVM dan crash native masuk ke file log app (lihat AppLog).
  * Catatan: JLI_Launch biasanya memanggil exit() saat Minecraft tutup,
- * jadi proses app ikut berhenti. Itu wajar untuk tahap ini.
+ * jadi proses app ikut berhenti.
  */
 object JvmLauncher {
 
     init {
         System.loadLibrary("javoxel_jvm")
     }
+
+    /** Arahkan stdout dan stderr native ke file log, dan pasang catcher crash native. */
+    private external fun redirectOutput(path: String)
 
     private external fun launchJvm(
         jliPath: String,
@@ -31,6 +36,12 @@ object JvmLauncher {
         val jli = findLibJli(javaHome)
             ?: error("libjli.so tidak ditemukan di ${javaHome.path}")
         val dot = if (javaMajor == 8) "1.8" else javaMajor.toString()
+
+        AppLog.i("JRE: ${javaHome.path} (Java $javaMajor)")
+        AppLog.i("libjli: ${jli.path}")
+        AppLog.i("Argumen JVM (${args.size}): ${args.joinToString(" ")}")
+
+        redirectOutput(AppLog.latestPath())
         return launchJvm(
             jliPath = jli.path,
             fullVersion = "$javaMajor.0.0-javoxel",

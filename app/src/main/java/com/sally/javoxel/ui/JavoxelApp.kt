@@ -24,6 +24,7 @@ import com.sally.javoxel.data.MinecraftInstaller
 import com.sally.javoxel.game.GameLauncher
 import com.sally.javoxel.game.requiredJavaMajor
 import com.sally.javoxel.runtime.JreInstaller
+import com.sally.javoxel.util.AppLog
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,6 +37,7 @@ fun JavoxelApp() {
 
     var version by remember { mutableStateOf("1.16.5") }
     var busy by remember { mutableStateOf(false) }
+    var showLog by remember { mutableStateOf(false) }
     val logLines = remember { mutableStateListOf<String>() }
     // Tebakan untuk tampilan saja. Saat aksi dijalankan, versi lokal dibaca dulu.
     val guessedJava = requiredJavaMajor(version)
@@ -43,8 +45,15 @@ fun JavoxelApp() {
     val minecraftDir = File(context.filesDir, "minecraft")
     val runtimeDir = File(context.filesDir, "runtime")
 
+    // Pesan masuk ke file log (bisa dibuka di layar Log) dan ke daftar singkat di layar ini.
     fun log(msg: String) {
+        AppLog.i(msg)
         scope.launch { logLines.add(msg) }
+    }
+
+    if (showLog) {
+        LogViewer(onClose = { showLog = false })
+        return
     }
 
     Column(
@@ -83,6 +92,7 @@ fun JavoxelApp() {
                         }
                     } catch (e: Exception) {
                         log("Gagal: ${e.message}")
+                        AppLog.e(e.stackTraceToString())
                     } finally {
                         busy = false
                     }
@@ -105,6 +115,7 @@ fun JavoxelApp() {
                         }
                     } catch (e: Throwable) {
                         log("Gagal JRE: ${e.message}")
+                        AppLog.e(e.stackTraceToString())
                     } finally {
                         busy = false
                     }
@@ -118,6 +129,7 @@ fun JavoxelApp() {
             onClick = {
                 busy = true
                 val id = version.trim()
+                log("Launch $id ditekan")
                 scope.launch {
                     try {
                         withContext(Dispatchers.IO) {
@@ -136,11 +148,17 @@ fun JavoxelApp() {
                         }
                     } catch (e: Throwable) {
                         log("Gagal launch: ${e.message}")
+                        AppLog.e(e.stackTraceToString())
                     } finally {
                         busy = false
                     }
                 }
             }
+        )
+
+        BevelButton(
+            text = "Buka log lengkap",
+            onClick = { showLog = true }
         )
 
         LazyColumn(
