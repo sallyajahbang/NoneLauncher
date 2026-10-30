@@ -44,6 +44,7 @@ fun JavoxelApp() {
 
     val minecraftDir = File(context.filesDir, "minecraft")
     val runtimeDir = File(context.filesDir, "runtime")
+    val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
 
     // Pesan masuk ke file log (bisa dibuka di layar Log) dan ke daftar singkat di layar ini.
     fun log(msg: String) {
@@ -110,7 +111,7 @@ fun JavoxelApp() {
                     try {
                         withContext(Dispatchers.IO) {
                             val major = GameLauncher.javaMajorFor(minecraftDir, id)
-                            JreInstaller(runtimeDir, context.assets) { msg -> log(msg) }
+                            JreInstaller(runtimeDir, context.assets, nativeLibDir) { msg -> log(msg) }
                                 .ensureJre(major)
                         }
                     } catch (e: Throwable) {
@@ -134,7 +135,7 @@ fun JavoxelApp() {
                     try {
                         withContext(Dispatchers.IO) {
                             val major = GameLauncher.javaMajorFor(minecraftDir, id)
-                            val javaHome = JreInstaller(runtimeDir, context.assets) { msg -> log(msg) }
+                            val javaHome = JreInstaller(runtimeDir, context.assets, nativeLibDir) { msg -> log(msg) }
                                 .ensureJre(major)
                             GameLauncher.launch(
                                 baseDir = minecraftDir,

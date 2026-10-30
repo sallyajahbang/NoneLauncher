@@ -47,6 +47,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        // libunpack200.so harus diekstrak ke nativeLibraryDir supaya bisa dijalankan.
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {

@@ -11,20 +11,24 @@ import org.tukaani.xz.XZInputStream
 
 /**
  * Menyiapkan JAVA_HOME untuk versi Java tertentu dari arsip yang di-bundle di assets:
- *   assets/jre/jre-<major>/universal.tar.xz  (opsional, bagian Java non-native)
+ *   assets/jre/jre-<major>/universal.tar.xz  (class library, berisi *.pack untuk Java 8)
  *   assets/jre/jre-<major>/bin-arm64.tar.xz  (bin dan native arm64)
  *
  * Hasil ekstrak ada di [baseDir]/java-<major>/. Jangan pakai penyimpanan eksternal (sdcard):
  * di sana symlink tidak bisa dibuat ("Operation not permitted").
+ *
+ * Untuk Java 8, file *.pack (pack200) harus di-unpack ke jar dulu. Android tidak punya
+ * Pack200 di Java, jadi dipakai libunpack200.so (dari [nativeLibDir], ikut APK).
  * Harus dipanggil dari thread IO.
  */
 class JreInstaller(
     private val baseDir: File,
     private val assets: AssetManager,
+    private val nativeLibDir: File,
     private val log: (String) -> Unit,
 ) {
 
-    /** Mengembalikan folder JAVA_HOME. Ekstrak hanya jika belum ada. */
+    /** Mengembalikan folder JAVA_HOME. Ekstrak hanya jika belum ada atau belum lengkap. */
     fun ensureJre(major: Int): File {
         val home = File(baseDir, "java-$major")
         // Ekstrak ulang kalau class library belum ada (JRE lama yang hanya berisi bin).
@@ -45,6 +49,8 @@ class JreInstaller(
             assets.open("$assetDir/$name").use { input -> extract(input, tmp) }
         }
 
+        if (major == 8) unpackPackFiles(tmp)
+
         home.deleteRecursively()
         if (!tmp.renameTo(home)) {
             tmp.deleteRecursively()
@@ -52,6 +58,9 @@ class JreInstaller(
         }
         if (!File(home, "bin/java").exists()) {
             error("JRE $major tidak punya bin/java setelah ekstrak")
+        }
+        if (!hasClassLibrary(home)) {
+            error("JRE $major tidak punya class library (rt.jar / modules) setelah ekstrak")
         }
 
         log("JRE $major siap")
@@ -61,6 +70,29 @@ class JreInstaller(
     /** rt.jar untuk JRE 8, file modules untuk JRE 9 ke atas. */
     private fun hasClassLibrary(home: File): Boolean =
         home.walkTopDown().maxDepth(3).any { it.isFile && (it.name == "rt.jar" || it.name == "modules") }
+
+    /**
+     * Ubah semua *.pack menjadi jar dengan libunpack200.so, lalu hapus file .pack-nya (-r).
+     * Sama seperti yang dilakukan Zalith Launcher 2.
+     */
+    private fun unpackPackFiles(root: File) {
+        val tool = File(nativeLibDir, "libunpack200.so")
+        if (!tool.exists()) error("libunpack200.so tidak ada di ${nativeLibDir.path}")
+
+        val packs = root.walkTopDown().filter { it.isFile && it.name.endsWith(".pack") }.toList()
+        log("Unpack ${packs.size} file .pack...")
+        for (pack in packs) {
+            val dest = File(pack.parentFile, pack.name.removeSuffix(".pack"))
+            val proc = ProcessBuilder(tool.path, "-r", pack.path, dest.path)
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().use { it.readText() }
+            val code = proc.waitFor()
+            if (code != 0 || !dest.exists()) {
+                error("unpack200 gagal untuk ${pack.name} (kode $code): ${output.take(300)}")
+            }
+        }
+    }
 
     private fun extract(input: InputStream, dest: File) {
         dest.mkdirs()
