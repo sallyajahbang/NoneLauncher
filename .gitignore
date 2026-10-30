@@ -1,8 +1,9 @@
-/target/
-/platforms/android/.gradle/
-/platforms/android/local.properties
-/platforms/android/app/build/
-/platforms/android/app/src/main/jniLibs/arm64-v8a/*.so
-*.iml
+.gradle/
 .idea/
+**/build/
+**/.cxx/
+local.properties
+*.iml
 .DS_Store
+app/src/main/jniLibs/*
+!app/src/main/jniLibs/.gitkeep

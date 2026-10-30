@@ -1,0 +1,9 @@
+[package]
+name = "rustcraft-game-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "rustcraft_core"
+path = "src/lib.rs"

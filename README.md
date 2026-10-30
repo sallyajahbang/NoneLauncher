@@ -1,112 +1,104 @@
 # RustCraft
 
-**RustCraft** is an independent Rust-native voxel game project targeting compatibility with Minecraft Java Edition **1.21.11**. Development is currently **Android ARM64 only**. The first gameplay target is singleplayer.
+**Android-only voxel sandbox prototype using a Rust game core and Kotlin/Jetpack Compose shell.**
 
-> RustCraft is not affiliated with Mojang or Microsoft. This project does not bundle proprietary Minecraft code or game assets. Users must provide assets they are legally entitled to use.
+> Status: Phase 0 foundation / early prototype. This is not yet a playable Minecraft Java Edition port.
 
-## Current scope
+## Target
 
-- Android NativeActivity entry point written in Rust.
-- `eframe` / `egui` application UI rendered through `wgpu`.
-- Android-first responsive layout for portrait and compact landscape.
-- Touch-sized controls, one-column scrolling content, bottom navigation in portrait, compact top navigation in landscape.
-- Diagnostics moved into a dedicated Developer screen instead of a floating overlay.
-- Home, Worlds, Settings, About, and Developer Diagnostics screens.
-- Android system bars are left visible; the app does not force immersive fullscreen.
-- ARM64 APK build through Gradle + `cargo-ndk`.
-- GitHub Actions CI and unsigned release APK workflow.
+- Platform: Android only (ARM64 build target in CI)
+- Game direction: clean-room Java Edition-compatible implementation
+- Compatibility target: Minecraft Java Edition 1.21.11
+- Gameplay priority: single-player / local worlds
+- Core: Rust
+- Android UI and lifecycle: Kotlin + Jetpack Compose
+- Native bridge: JNI, built with Android NDK and `cargo-ndk`
 
-The current voxel graphic is a UI preview, not yet the dedicated 3D chunk renderer. World generation, Anvil/NBT loading, gameplay, and Java protocol are not implemented yet.
+## What works in this starter
 
-## Tech stack
+- Android landscape application shell and main menu
+- Rust native library loaded through JNI
+- Deterministic Rust terrain/surface-map generation
+- Basic 16x384x16 chunk data structure and terrain fill routine
+- Top-down terrain preview with touch movement controls
+- GitHub Actions workflow that tests Rust and builds an ARM64 Android debug APK
+- Kotlin fallback terrain preview when the native library is not present (useful for IDE previews)
 
-| Component | Technology |
-|---|---|
-| Language | Rust 2024 |
-| Android entry point | NativeActivity + winit |
-| UI | egui / eframe |
-| GPU backend | wgpu |
-| Native ABI | Android ARM64 (`arm64-v8a`) |
-| Minimum Android | API 26 |
-| Android compile/target SDK | 35 |
-| Native build | cargo-ndk + NDK 27.2 |
-| Android packaging | Gradle 8.11.1 + AGP 8.9.2 |
+## What is not implemented yet
 
-## Android UI notes
-
-See [`docs/ANDROID_UI.md`](docs/ANDROID_UI.md) for the phone-first layout, landscape behavior, touch targets, and system-bar handling.
+- 3D renderer / OpenGL ES or Vulkan backend
+- First-person camera, collision, gravity, block breaking and placement
+- Minecraft Java world-generation parity
+- Java Edition registry, data pack, resource pack, model and shader compatibility
+- Inventory, crafting, mobs, audio, lighting, redstone, dimensions and survival systems
+- Java Edition save import/export and multiplayer protocol
+- Microsoft account authentication or online services
 
 ## Build locally
 
 Requirements:
 
-- Rust stable toolchain
-- Android SDK Platform 35 and Build Tools 35.0.0
-- Android NDK 27.2.12479018
+- Android Studio with Android SDK 35
+- Android NDK `27.2.12479018`
 - JDK 17
-- Gradle 8.11.1
+- Rust stable toolchain
 - `cargo-ndk`
+- Gradle 8.10.2
 
-Install the Rust target and helper:
+Install the Rust Android target and cargo-ndk:
 
 ```bash
 rustup target add aarch64-linux-android
-cargo install cargo-ndk --locked
+cargo install cargo-ndk
 ```
 
-Set `ANDROID_NDK_HOME` to the installed NDK directory. Then build the APK:
+Build Rust native library, then Android APK:
 
 ```bash
-cd platforms/android
+cargo test --workspace
+cargo ndk -t arm64-v8a -o app/src/main/jniLibs build --release -p rustcraft-android
 gradle assembleDebug
 ```
 
 APK output:
 
 ```text
-platforms/android/app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/debug/app-debug.apk
 ```
-
-The Gradle `preBuild` task invokes `cargo-ndk` and places `librustcraft.so` in `app/src/main/jniLibs/arm64-v8a`.
 
 ## GitHub Actions
 
-`.github/workflows/ci.yml` builds the Android ARM64 debug APK on every push, pull request, or manual dispatch. Download the APK from the workflow run's **Artifacts** section.
-
-`.github/workflows/release.yml` builds an Android ARM64 release APK when manually dispatched or when a `v*` tag is pushed. The generated APK is currently **unsigned**; configure a signing keystore through GitHub Actions secrets before distributing it as a production release.
+Push this repository to GitHub. The workflow at `.github/workflows/android-build.yml` runs Rust tests, compiles the ARM64 JNI library, builds the Android debug APK, and uploads the APK as the `rustcraft-android-debug` workflow artifact.
 
 ## Repository layout
 
 ```text
-rustcraft/
-├── .github/workflows/
-│   ├── ci.yml
-│   └── release.yml
-├── docs/
-├── platforms/android/
-│   ├── app/
-│   │   └── src/main/
-│   │       ├── AndroidManifest.xml
-│   │       ├── jniLibs/arm64-v8a/
-│   │       └── res/values/styles.xml
-│   ├── build.gradle.kts
-│   └── settings.gradle.kts
-├── src/
-│   ├── app.rs
-│   └── lib.rs
-├── Cargo.toml
-└── rust-toolchain.toml
+RustCraft/
+├── app/                         # Android app: Kotlin + Compose
+├── crates/
+│   ├── game-core/                # Platform-independent Rust world/chunk logic
+│   └── android-bridge/           # JNI exports compiled as lib
+├── docs/                         # Design and implementation notes
+├── .github/workflows/            # CI build
+├── Cargo.toml                    # Rust workspace
+└── README.md
 ```
+
+## Compatibility and licensing
+
+RustCraft is an independent implementation. It does not include Minecraft's source code, proprietary binaries, sounds, textures, models, fonts, or other game assets. The current terrain algorithm is original prototype code and is not intended to reproduce Mojang's world generator.
+
+Users must provide files they are legally entitled to use. Do not commit or redistribute Minecraft game files or assets in this repository or its releases. Review the official [Minecraft EULA](https://www.minecraft.net/eula) and applicable terms before building asset import or distribution features.
+
+The RustCraft source in this repository is licensed under MIT. This license does not grant rights to Minecraft or Mojang/Microsoft intellectual property.
 
 ## Roadmap
 
-1. Android app shell and responsive UI.
-2. Dedicated wgpu 3D renderer with camera, depth buffer, WGSL shaders, and GPU mesh buffers.
-3. Voxel chunk representation and greedy meshing.
-4. Singleplayer world generation, player movement, collision, and block interaction.
-5. NBT / Anvil reading and Java Edition compatibility adapters.
-6. Save/load, inventory, crafting, entities, and further gameplay systems.
+1. **Phase 0 — Foundation:** Android project, Rust workspace, JNI, CI and prototype world preview.
+2. **Phase 1 — 3D engine:** Vulkan/OpenGL ES backend, chunk meshing, camera, touch controls and frame pacing.
+3. **Phase 2 — World system:** chunk streaming, deterministic terrain, world persistence and save migration design.
+4. **Phase 3 — Core gameplay:** player physics, block interaction, inventory, crafting and basic lighting.
+5. **Phase 4 — Java data compatibility:** registries, block states, resource-pack parsing, data-driven content and version-specific behavior.
+6. **Phase 5 — 1.21.11 parity work:** incremental implementation and regression testing against the Java Edition target.
 
-## License
-
-The RustCraft source is dual-licensed under MIT OR Apache-2.0. See `LICENSE-MIT.txt` and `LICENSE-APACHE.txt`.
+A full Java Edition-compatible implementation is a large, multi-phase engineering project. Reaching the target means implementing and testing each subsystem; matching the version number in the UI alone is not compatibility.
